@@ -1,0 +1,17 @@
+{
+  "description": "Runs Biome check --write after Write/Edit to enforce project lint standards",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/scripts/biome-check.sh",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

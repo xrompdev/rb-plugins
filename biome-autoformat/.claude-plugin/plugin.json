@@ -1,0 +1,5 @@
+{
+  "name": "biome-autoformat",
+  "version": "0.1.0",
+  "description": "Automatically runs Biome check --write after file modifications to enforce project lint and formatting standards"
+}
