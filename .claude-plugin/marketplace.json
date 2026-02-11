@@ -1,0 +1,17 @@
+{
+  "name": "rb-plugins",
+  "owner": {
+    "name": "ResponsiBid"
+  },
+  "metadata": {
+    "description": "ResponsiBid team plugins for Claude Code"
+  },
+  "plugins": [
+    {
+      "name": "db-query",
+      "source": "./db-query",
+      "description": "Read-only local database query tool for MySQL and PostgreSQL",
+      "version": "0.1.0"
+    }
+  ]
+}
