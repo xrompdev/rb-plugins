@@ -1,0 +1,8 @@
+{
+  "name": "commit-commands",
+  "description": "Streamline your git workflow with commands for committing, pushing, and creating pull requests without co-author attribution",
+  "author": {
+    "name": "ResponsiBid",
+    "email": "dev@responsibid.com"
+  }
+}

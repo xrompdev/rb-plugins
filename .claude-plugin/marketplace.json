@@ -1,16 +1,48 @@
 {
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "rb-plugins",
   "owner": {
-    "name": "ResponsiBid"
+    "name": "ResponsiBid",
+    "email": "dev@responsibid.com"
   },
   "metadata": {
     "description": "ResponsiBid team plugins for Claude Code"
   },
   "plugins": [
     {
+      "name": "biome-autoformat",
+      "source": "./plugins/biome-autoformat",
+      "description": "Automatically runs Biome check --write after file modifications to enforce project lint and formatting standards",
+      "version": "0.1.0"
+    },
+    {
+      "name": "commit-commands",
+      "source": "./plugins/commit-commands",
+      "description": "Streamline your git workflow with commands for committing, pushing, and creating pull requests without co-author attribution",
+      "version": "0.1.0"
+    },
+    {
       "name": "db-query",
-      "source": "./db-query",
-      "description": "Read-only local database query tool for MySQL and PostgreSQL",
+      "source": "./plugins/db-query",
+      "description": "Read-only local database query tool for MySQL and PostgreSQL. Allows querying, schema inspection, and table listing without any write operations.",
+      "version": "0.1.0"
+    },
+    {
+      "name": "reviewer",
+      "source": "./plugins/reviewer",
+      "description": "Light code review of current branch changes focused on anti-pattern detection",
+      "version": "0.1.0"
+    },
+    {
+      "name": "spec-kit",
+      "source": "./plugins/spec-kit",
+      "description": "Auto-installs and integrates GitHub spec-kit for spec-driven development workflows",
+      "version": "0.1.0"
+    },
+    {
+      "name": "unit-tests",
+      "source": "./plugins/unit-tests",
+      "description": "Update and create unit tests based on current branch changes",
       "version": "0.1.0"
     }
   ]

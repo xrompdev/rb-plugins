@@ -1,0 +1,8 @@
+{
+  "name": "biome-autoformat",
+  "description": "Automatically runs Biome check --write after file modifications to enforce project lint and formatting standards",
+  "author": {
+    "name": "ResponsiBid",
+    "email": "dev@responsibid.com"
+  }
+}

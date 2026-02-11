@@ -1,0 +1,8 @@
+{
+  "name": "unit-tests",
+  "description": "Update and create unit tests based on current branch changes",
+  "author": {
+    "name": "ResponsiBid",
+    "email": "dev@responsibid.com"
+  }
+}
