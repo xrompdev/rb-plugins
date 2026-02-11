@@ -14,6 +14,12 @@ Requires [Claude Code](https://claude.ai/code) v1.0.33 or later.
 /plugin install db-query@rb-plugins
 ```
 
+To use a plugin directly from the CLI:
+
+```bash
+claude --plugin rb-plugins/db-query
+```
+
 To update plugins after new releases:
 
 ```bash
@@ -22,37 +28,53 @@ To update plugins after new releases:
 
 ## Plugins
 
+| Plugin | Description |
+|--------|-------------|
+| [biome-autoformat](plugins/biome-autoformat) | Auto-runs Biome lint and format on file modifications |
+| [commit-commands](plugins/commit-commands) | Git commit, push, and PR commands without co-author attribution |
+| [db-query](plugins/db-query) | Read-only MySQL and PostgreSQL query tool |
+| [reviewer](plugins/reviewer) | Anti-pattern detection on current branch changes |
+| [spec-kit](plugins/spec-kit) | Auto-installs GitHub spec-kit for spec-driven development |
+| [unit-tests](plugins/unit-tests) | Update and create unit tests from branch changes |
+
+## Plugin details
+
+### biome-autoformat
+
+Automatically runs `biome check --write` after every `Write`/`Edit` on `.ts`, `.js`, `.json` files in `apps/` or `libs/`.
+
+### commit-commands
+
+| Command | Description |
+|---------|-------------|
+| `/commit` | Stage and commit with an AI-generated message |
+| `/commit-push-pr` | Commit, push, and open a PR in one step |
+| `/clean_gone` | Remove local branches deleted from the remote |
+
 ### db-query
-
-Read-only database query tool for local MySQL and PostgreSQL databases.
-
-**Commands:**
 
 | Command | Description |
 |---------|-------------|
 | `/db-query:query <mysql\|postgres> <SQL>` | Run a read-only SQL query |
-| `/db-query:schema <mysql\|postgres> [table]` | Inspect table schema, columns, and indexes |
+| `/db-query:schema <mysql\|postgres> [table]` | Inspect table schema and indexes |
 | `/db-query:tables [mysql\|postgres\|all]` | List all tables with row counts |
 
-**Features:**
+Also activates automatically when asking about database data.
 
-- Asks for `DATABASE_URL` (MySQL) or `PAYMENT_DATABASE_URL` (PostgreSQL) before querying
-- Tests connection before running any queries
-- Shows the SQL statement executed with every query result
-- Safety guards block all write operations (INSERT, UPDATE, DELETE, DROP, etc.)
-- Auto-detects Docker service names and remaps to localhost ports
+### reviewer
 
-**Supported databases:**
+| Command | Description |
+|---------|-------------|
+| `/review` | Review changed files for anti-patterns (debug code, empty catches, TODOs, magic numbers, deep nesting, long functions, duplicate/dead code) |
 
-- **MySQL** — main application database (users, invoices, bids, companies, etc.)
-- **PostgreSQL** — payment service database (payment events, projections, financial data)
+### spec-kit
 
-**Examples:**
+Installs the `specify` CLI at session start if not already available.
 
-```
-/db-query:query mysql SELECT * FROM users LIMIT 5
-/db-query:schema mysql invoices
-/db-query:tables all
-```
+### unit-tests
 
-The skill also activates automatically when you ask about database data, e.g. "check if bid 953171 is deleted" or "how many deleted bids in 2024".
+| Command | Description |
+|---------|-------------|
+| `/update [path]` | Analyze branch changes and update or create unit tests |
+
+Includes a **testing-conventions** skill with NestJS/Prisma mocking patterns.

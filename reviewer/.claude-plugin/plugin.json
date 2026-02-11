@@ -1,5 +1,0 @@
-{
-  "name": "reviewer",
-  "version": "0.1.0",
-  "description": "Light code review of current branch changes focused on anti-pattern detection"
-}

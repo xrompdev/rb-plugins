@@ -1,0 +1,8 @@
+{
+  "name": "spec-kit",
+  "description": "Auto-installs and integrates GitHub spec-kit for spec-driven development workflows",
+  "author": {
+    "name": "ResponsiBid",
+    "email": "dev@responsibid.com"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "db-query",
+  "description": "Read-only local database query tool for MySQL and PostgreSQL. Allows querying, schema inspection, and table listing without any write operations.",
+  "author": {
+    "name": "ResponsiBid",
+    "email": "dev@responsibid.com"
+  }
+}

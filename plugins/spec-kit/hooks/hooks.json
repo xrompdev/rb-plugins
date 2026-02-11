@@ -1,0 +1,16 @@
+{
+  "description": "Auto-installs spec-kit (specify CLI) on session start if not already installed",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/scripts/ensure-installed.sh",
+            "timeout": 120
+          }
+        ]
+      }
+    ]
+  }
+}

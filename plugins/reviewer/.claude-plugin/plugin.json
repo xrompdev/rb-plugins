@@ -1,0 +1,8 @@
+{
+  "name": "reviewer",
+  "description": "Light code review of current branch changes focused on anti-pattern detection",
+  "author": {
+    "name": "ResponsiBid",
+    "email": "dev@responsibid.com"
+  }
+}
