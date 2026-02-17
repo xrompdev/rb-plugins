@@ -1,5 +1,5 @@
 ---
-name: review
+name: light
 description: Light review of current branch changes for anti-patterns using a git worktree
 allowed-tools:
   - Read
