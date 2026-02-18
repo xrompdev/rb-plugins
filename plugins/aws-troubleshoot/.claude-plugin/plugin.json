@@ -1,0 +1,8 @@
+{
+  "name": "aws-troubleshoot",
+  "description": "AWS infrastructure troubleshooting assistant for responsibid ECS/Fargate microservices. Reads Terraform configs and suggests AWS CLI commands to diagnose performance issues.",
+  "author": {
+    "name": "ResponsiBid",
+    "email": "dev@responsibid.com"
+  }
+}

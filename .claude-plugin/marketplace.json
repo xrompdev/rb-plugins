@@ -44,6 +44,12 @@
       "source": "./plugins/unit-tests",
       "description": "Update and create unit tests based on current branch changes",
       "version": "0.1.0"
+    },
+    {
+      "name": "aws-troubleshoot",
+      "source": "./plugins/aws-troubleshoot",
+      "description": "AWS infrastructure troubleshooting assistant for responsibid ECS/Fargate microservices with interactive diagnostics and Terraform-aware recommendations",
+      "version": "0.1.0"
     }
   ]
 }
