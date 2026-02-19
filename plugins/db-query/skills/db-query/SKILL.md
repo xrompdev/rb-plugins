@@ -3,16 +3,18 @@ name: db-query
 description: >
   Use when the user is troubleshooting, debugging, or investigating issues that involve database data.
   Also use when the user asks about data in the database, wants to verify records, check table structure,
-  inspect relationships, count rows, or understand the current state of data. Triggers on keywords like
+  inspect relationships, count rows, or understand the current state of data. Also use when the user wants
+  to create, insert, or add records to the local database. Triggers on keywords like
   "check the database", "what's in the table", "query the data", "look at the records", "debug this data",
   "why is this record", "troubleshoot", "investigate", "verify in db", "check db", "data looks wrong",
-  "missing data", "duplicate records", "show me the data".
-version: 0.1.0
+  "missing data", "duplicate records", "show me the data", "insert record", "create entry", "add to database",
+  "write to db", "seed data", "add a row".
+version: 0.2.0
 ---
 
-# Local Database Query Skill
+# Local Database Query & Write Skill
 
-Query the local MySQL and PostgreSQL databases to help with troubleshooting, debugging, and data investigation. This skill provides read-only access to two databases.
+Query and insert records into the local MySQL and PostgreSQL databases. This skill provides read access and localhost-only INSERT capability with mandatory confirmation.
 
 ## Databases
 
@@ -47,9 +49,30 @@ Docker auto-detection: if the host in the URL is a Docker service name (e.g. `my
 - `DESCRIBE` / `DESC` (MySQL table structure)
 - `EXPLAIN` (query execution plans)
 
+## Write Operations (INSERT only, localhost only)
+
+INSERT statements can be executed through the write scripts, with these restrictions:
+
+- **Localhost only**: The connection URL must resolve to localhost (127.0.0.1, ::1, or a Docker service name). Remote writes are blocked at the script level.
+- **INSERT only**: Only INSERT statements are allowed. UPDATE, DELETE, DROP, ALTER, and all other modifications are blocked.
+- **Confirmation required**: Always show the full INSERT statement and get explicit user confirmation before executing.
+
+### How to Write
+
+- **MySQL**: `bash ${CLAUDE_PLUGIN_ROOT}/scripts/write-mysql.sh "$DATABASE_URL" "INSERT_QUERY"`
+- **PostgreSQL**: `bash ${CLAUDE_PLUGIN_ROOT}/scripts/write-postgres.sh "$PAYMENT_DATABASE_URL" "INSERT_QUERY"`
+
+### Write Workflow
+
+1. Inspect the target table schema first
+2. Build the INSERT based on schema and user request
+3. Show the full SQL and ask for confirmation via AskUserQuestion
+4. Execute only after user confirms
+5. Verify by querying back the inserted record
+
 ## Prohibited Operations
 
-All write and schema-modification operations are blocked by the scripts. Do not attempt: INSERT, UPDATE, DELETE, DROP, ALTER, CREATE, TRUNCATE, or any other data/schema modification.
+UPDATE, DELETE, DROP, ALTER, CREATE, TRUNCATE, and all other schema-modification operations are blocked. Only SELECT (read scripts) and INSERT (write scripts, localhost only) are permitted.
 
 ## When to Query Proactively
 
