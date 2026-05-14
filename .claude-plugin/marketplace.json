@@ -50,6 +50,18 @@
       "source": "./plugins/aws-troubleshoot",
       "description": "AWS infrastructure troubleshooting assistant for responsibid ECS/Fargate microservices with interactive diagnostics and Terraform-aware recommendations",
       "version": "0.1.0"
+    },
+    {
+      "name": "brain",
+      "source": "./plugins/brain",
+      "description": "Capture development context (decisions, troubleshooting, gotchas, PR reviews, daily notes) into the ResponsiBid Obsidian vault",
+      "version": "0.5.0"
+    },
+    {
+      "name": "fix-pr",
+      "source": "./plugins/fix-pr",
+      "description": "Diagnose and fix failing CI checks on a GitHub pull request",
+      "version": "0.1.0"
     }
   ]
 }

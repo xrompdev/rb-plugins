@@ -1,0 +1,9 @@
+{
+  "name": "fix-pr",
+  "description": "Diagnose and fix failing CI checks on a GitHub pull request",
+  "version": "0.1.0",
+  "author": {
+    "name": "ResponsiBid",
+    "email": "dev@responsibid.com"
+  }
+}
