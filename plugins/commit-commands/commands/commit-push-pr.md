@@ -1,6 +1,6 @@
 ---
-allowed-tools: Bash(git checkout -b:*), Bash(git add:*), Bash(git status:*), Bash(git push:*), Bash(git commit:*), Bash(git diff:*), Bash(git reset HEAD:*), Bash(gh pr create:*)
-description: Commit by intention, push, and open a PR
+allowed-tools: Bash(git checkout -b:*), Bash(git add:*), Bash(git status:*), Bash(git push:*), Bash(git commit:*), Bash(git diff:*), Bash(git reset HEAD:*), Bash(git worktree list:*), Bash(cp -r:*), Bash(gh issue list:*), Bash(gh pr create:*), Write
+description: Commit by intention, push, and open a PR with diagrams, sample input/output and scenarios
 ---
 
 ## Context
@@ -9,6 +9,7 @@ description: Commit by intention, push, and open a PR
 - Current git diff (staged and unstaged changes): !`git diff HEAD`
 - Current branch: !`git branch --show-current`
 - Recent commits: !`git log --oneline -10`
+- PR template: !`cat .github/PULL_REQUEST_TEMPLATE.md 2>/dev/null || echo "(none)"`
 
 ## Your task
 
@@ -30,8 +31,8 @@ Based on the above changes:
 
 2. **Analyze all changes** and identify distinct intentions (bug fix, feature, refactor, config, tests, docs, etc.)
 3. **Create separate commits for each intention group** — stage only the files belonging to each group, then commit with a clear message describing that group's purpose
-4. **Push** the branch to origin
-5. **Create a pull request** using `gh pr create` — the PR title should summarize the overall work, and the body should list the commits with a brief description of each intention group
+4. **Push** the branch with an explicit target: `git push -u origin <branch>:<branch>`
+5. **Create a pull request**: write the body (see PR body) to a file, then `gh pr create --title "<concise title>" --body-file <file>`
 
 ### Intention grouping rules
 
@@ -47,20 +48,26 @@ Based on the above changes:
 - Use conventional commit prefixes when the repo uses them (feat, fix, refactor, chore, docs, test, style)
 - Do NOT include a Co-Authored-By line or any co-author attribution
 
-### PR format
+### Git hooks in a worktree
 
-```
-gh pr create --title "<concise title>" --body "$(cat <<'EOF'
-## Summary
-<1-2 sentence overview>
+Hooks run on every commit and push. When a hook fails with `cannot open .husky/_/husky.sh` inside a git worktree, copy `.husky/_` from the main checkout (the first path in `git worktree list`) into this worktree and retry, so the hooks run for real.
 
-## Commits
-- **<commit 1 subject>**: <brief description>
-- **<commit 2 subject>**: <brief description>
-- ...
-EOF
-)"
-```
+### PR body
+
+When the PR template above exists, keep every one of its headings and fill each one; fold the sections below into the matching headings. With no template, use Summary, Evidence and Merge Danger as headings.
+
+1. **Issue link** — `Part of #N` when the branch, the commits or an open issue (`gh issue list --search "<keywords>"`) matches the work; leave the line out when nothing fits.
+2. **Summary** — one to three sentences: the problem, then what the change does about it.
+3. **Diagrams** — one to three Mermaid diagrams of what changed: a before/after flow, a `sequenceDiagram` of where the new code runs, the decision logic. In Mermaid, `;` ends a statement, so write commas inside node and message text.
+4. **Changes** — bullets grouped by component. With several commits, list each commit subject with one line on its intention.
+5. **Sample input → expected output** — real values taken from a test or a run, saying which; tables for records, JSON for stored payloads. Label any value you made up as illustrative.
+6. **Scenarios** — a table of `Scenario | Before | After`: the main case, the edge cases (empty, duplicate, concurrent, old or legacy data) and the paths that must stay the same.
+7. **Evidence** — before and after: the test that failed and now passes, the command output, the counts of tests that actually ran.
+8. **Merge Danger** — Door: two-way or one-way, and why. Blast Radius: one word. Then the release order, whether undoing the release is safe, and how someone would notice a problem.
+
+Scale the body to the change: a one-line fix carries a summary, evidence and merge danger; diagrams, samples and scenarios earn their place when behaviour or data flow changes.
+
+The body is public: it describes the change and its proof, with no mention of AI, Claude or how it was written, and no generated-by footer.
 
 ### Constraints
 
