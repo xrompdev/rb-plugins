@@ -1,0 +1,8 @@
+{
+  "name": "brain",
+  "description": "Capture development context (decisions, troubleshooting, gotchas, PR reviews, daily notes) into the ResponsiBid Obsidian vault",
+  "author": {
+    "name": "ResponsiBid",
+    "email": "dev@responsibid.com"
+  }
+}
