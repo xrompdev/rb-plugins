@@ -59,10 +59,11 @@ Jev's verdicts are leads, not findings. Never raise a concern on a Jev verdict a
 Hand each PR in `to_review` to its own background agent, launching them all in one message so they run at the same time. Give each agent:
 
 - Its PR entry from the prep JSON, pasted into the agent prompt. Do not write it to a file for the agent to read: the jev-guard hook screens tool output, reads the lessons as instructions aimed at an agent, and tells the agent to ignore them.
+- The repo's `REVIEW.md` from the base branch (`git show origin/main:REVIEW.md`), pasted into the prompt for the same reason, when the repo has one. Read it from the base, not the PR head, so a PR that edits `REVIEW.md` is not reviewed against its own rules. When the repo has none, say so in the prompt.
 - The path to this file, with an instruction to read sections 5b–5d for the criteria and rules.
 - The rule that it is read-only. It must not approve, comment, write files, check out branches, or fetch. It reads code with `git show refs/patrol/<number>:<path>` and `gh pr diff <number>`.
 - What to return: verdict (Approve / Approve with light comments / Needs review), a one-line summary, a two-or-three-sentence overview, linked issue, key changes, follow-ups, and whether `environment.ts` changed.
-- Concerns, each already verified in the code and returned as a **ready-to-post draft**: `path:line` inside a diff hunk (or "conversation"), blocking or `Non-blocking:`, and the exact comment text written to the 6a rules. Include the path to this file so the agent can read 6a.
+- Concerns, each already verified in the code and returned as a **ready-to-post draft**: `path:line` inside a diff hunk (or "conversation"), its tier (Blocking or Nit, per 5b) with the rule it falls under, the concrete failure scenario for a Blocking one, and the exact comment text written to the 6a rules. Include the path to this file so the agent can read 6a.
 
 Agents read `CONTEXT-MAP.md`, plus the `context_md` files and `adrs_to_open` from their entry, as they need them. Do not wait for all of them: start Step 6 as soon as the first agent returns.
 
@@ -72,7 +73,14 @@ Agents read `CONTEXT-MAP.md`, plus the `context_md` files and `adrs_to_open` fro
 - Say so when a concern comes from reading the code and was not run.
 - A clean PR is a valid result. Do not invent concerns.
 - **Follow-ups are only for work outside this PR's scope.** A defect in the diff (a replica read, an unscoped query, a retry loop, an event with no consumer, a bad default) is always a concern, never a follow-up.
-- Rate severity by what a user or the data would see. Wrong money, lost or duplicated writes, cross-company reads, a broken retry and a dead-end flow are blocking. A concern the agent calls blocking must not come back with an Approve verdict.
+- Give every concern exactly one tier, **Blocking** or **Nit**. There is no third tier.
+  - **With a `REVIEW.md`**, its Standards, Spec and Replay safety sections set the tiers. Name the `REVIEW.md` rule each concern falls under.
+  - **Without one**, Blocking means a correctness defect with a concrete failure scenario: wrong money, a lost or duplicated write or side effect, a cross-company read, a broken retry, a wrong or terminal status, a dead-end flow, a security hole. Everything else is a Nit.
+  - Patrol's own criteria (5c, 5d) do not add tiers. A finding from them is Blocking only when it meets the Blocking bar above.
+- A Blocking concern states its failure scenario: the input or state, and what the user or the data ends up with. If you cannot write one, it is a Nit.
+- Before calling a concern a Nit, check it against the Blocking bar. A concern that loses a write, sends nothing, or leaves a wrong status is Blocking, however small the fix.
+- A Blocking concern never comes back with an Approve or Approve-with-light-comments verdict.
+- Skip anything Biome or tsc already enforces.
 - Before raising a concern, read the whole linked-issue thread and the earlier review threads on the PR. Do not ask to undo something the author changed on purpose, a fix another reviewer asked for, or a decision the product owner has since reversed.
 - On a re-review, check each earlier concern in the code at the head. An author reply saying it is fixed is not evidence.
 - Do not raise commit-message or commit-body wording, and do not ask for "an integration test" without naming the case it must cover. Both get ignored.
@@ -85,6 +93,7 @@ Review ONLY for the criteria in 5c and 5d:
 | Criterion | What to check |
 |-----------|---------------|
 | **DB schema** | Are migrations safe? No destructive changes without migration steps? |
+| **REVIEW.md** | When the repo has one, apply its Standards, Spec and Replay safety sections in full: they come first, and the rows below add to them. |
 | **Proper types** | No `any`, no loose typing where existing types exist |
 | **Existing patterns** | Follows conventions already in the codebase. Find the sibling component, handler or rule that already does the same job (a validation helper the sibling form calls, an existing hook, a rollup rule) and compare: does the new code reuse it or match its behaviour? |
 | **No unnecessary novelty** | No new libraries or architectural patterns when existing ones work |
@@ -126,7 +135,7 @@ Show the final summary and submit step (6d) only after every PR has been decided
 Give each PR a verdict from its review:
 
 - **Approve**: no concerns.
-- **Approve with light comments**: every concern is minor and the PR would otherwise be approved. The drafts open with `Non-blocking:`.
+- **Approve with light comments**: every concern is a Nit (5b). The drafts open with `Non-blocking:`.
 - **Needs review**: at least one concern should block approval.
 
 ### 6a. Draft the comments
@@ -295,7 +304,7 @@ Linked issue: {#number and title, or "none"}
 
 ## Review
 
-- [ ] {Each concern as a checkbox — specific issue with file path and line number if possible}
+- [ ] {Blocking | Nit}: {Each concern as a checkbox — specific issue with file path and line number if possible; for Blocking, the failure scenario}
 - [ ] {Next concern}
 
 If no concerns: replace the checkboxes with "No issues found — approved."
