@@ -405,8 +405,9 @@ def prepare(pr, repo, lessons, adrs):
     if action == "skip":
         return entry
 
-    # `gh pr view --json files` stops at 100 files; the diff name list is complete.
-    files = gh("pr", "diff", str(number), "--name-only").split()
+    # `gh pr view --json files` stops at 100 files, and `gh pr diff` refuses a diff over 20,000 lines (HTTP 406);
+    # the paginated files endpoint has neither limit (it caps at 3,000 files).
+    files = gh("api", "--paginate", f"repos/{repo}/pulls/{number}/files", "--jq", ".[].filename").splitlines()
     issues = [
         {"number": i["number"], **gh_json("issue", "view", str(i["number"]), "--json", "title,body")}
         for i in view["closingIssuesReferences"]
@@ -417,6 +418,8 @@ def prepare(pr, repo, lessons, adrs):
     entry.update({
         "size": {"additions": pr["additions"], "deletions": pr["deletions"], "files": len(files)},
         "large": changed_lines > LARGE_PR_LINES,
+        # The files endpoint stops at 3,000; past that, services and code facts miss paths.
+        "files_truncated": len(files) < (pr.get("changedFiles") or 0),
         "linked_issues": [{"number": i["number"], "title": i["title"]} for i in issues],
         "head_ref": f"refs/patrol/{number}",
         "last_reviewed_commit": my_last_reviewed_commit(view) if action == "re-review" else None,
@@ -436,6 +439,47 @@ def prepare(pr, repo, lessons, adrs):
     return entry
 
 
+def failure_reason(error):
+    """What failed, readable: the gh call without its flags and the last stderr line, or the error type."""
+    if isinstance(error, subprocess.CalledProcessError):
+        call = " ".join(a for a in error.cmd[:4] if not a.startswith("-"))
+        detail = (error.stderr or "").strip().splitlines()[-1:] or [f"exit {error.returncode}"]
+        return f"prep failed: {call}: {detail[0]}"
+    return f"prep failed: {type(error).__name__}: {error}"
+
+
+def prepare_or_fail(pr, repo, lessons, adrs):
+    """One PR's failure marks that PR failed instead of losing the repo's whole run. Broad on purpose: a gh error,
+    an odd gh response (a null field, bad JSON) or a bug here all end the same way, a PR listed as failed with the
+    error named, so nothing is skipped silently and a script bug shows up as every PR failing with the same error."""
+    try:
+        return prepare(pr, repo, lessons, adrs)
+    except Exception as error:  # noqa: BLE001 (see docstring)
+        return {"number": pr["number"], "title": pr["title"], "url": pr["url"], "author": pr["author"]["login"],
+                "action": "failed", "reason": failure_reason(error)}
+
+
+def fetch_heads(entries):
+    """Fetch each PR head into refs/patrol/<number>. One bad refspec (a PR deleted since the list) fails the whole
+    fetch, so on failure fetch one by one and mark only the PRs that still fail."""
+    def fetch(batch):
+        subprocess.run(["git", "fetch", "--quiet", "--force", "origin",
+                        *[f"pull/{e['number']}/head:{e['head_ref']}" for e in batch]],
+                       capture_output=True, text=True, check=True)
+    if not entries:  # no refspec would make it a plain `git fetch origin`
+        return
+    try:
+        fetch(entries)
+        return
+    except subprocess.CalledProcessError:
+        pass
+    for e in entries:
+        try:
+            fetch([e])
+        except subprocess.CalledProcessError as error:
+            e.update(action="failed", reason=failure_reason(error))
+
+
 def main():
     if sys.argv[1:2] == ["--gate"]:
         if len(sys.argv) != 4 or not re.fullmatch(r"[0-9]+", sys.argv[2]) or not re.fullmatch(r"[0-9a-f]{40}", sys.argv[3]):
@@ -445,7 +489,7 @@ def main():
     started = time.monotonic()
     repo = gh_json("repo", "view", "--json", "nameWithOwner")["nameWithOwner"]
     prs = gh_json("pr", "list", "--state", "open", "--limit", "1000",
-                  "--json", "number,title,author,url,isDraft,additions,deletions")
+                  "--json", "number,title,author,url,isDraft,additions,deletions,changedFiles")
     filtered, candidates = [], []
     for pr in prs:
         login = pr["author"]["login"]
@@ -460,18 +504,17 @@ def main():
 
     lessons, adrs = load_lessons(), load_adrs()
     with ThreadPoolExecutor(max_workers=8) as pool:
-        entries = list(pool.map(lambda pr: prepare(pr, repo, lessons, adrs), candidates))
+        entries = list(pool.map(lambda pr: prepare_or_fail(pr, repo, lessons, adrs), candidates))
 
-    to_review = [e for e in entries if e["action"] != "skip"]
-    if to_review:
-        refspecs = [f"pull/{e['number']}/head:{e['head_ref']}" for e in to_review]
-        subprocess.run(["git", "fetch", "--quiet", "--force", "origin", *refspecs], check=True)
+    fetch_heads([e for e in entries if e["action"] in ("review", "re-review")])
+    to_review = [e for e in entries if e["action"] in ("review", "re-review")]
 
     print(json.dumps({
         "repo": repo,
         "open_prs": len(prs),
         "filtered": filtered,
         "skipped": [{k: e[k] for k in ("number", "title", "reason")} for e in entries if e["action"] == "skip"],
+        "failed": [{k: e[k] for k in ("number", "title", "url", "reason")} for e in entries if e["action"] == "failed"],
         "to_review": to_review,
         "lessons_checked": len(lessons),
         "adrs_checked": len(adrs),
