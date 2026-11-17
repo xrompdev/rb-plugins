@@ -16,12 +16,12 @@ Review open (non-draft) PRs, walk me through them one at a time in a question wi
 
 ## Steps 1–4: Run the prep script
 
-Patrol runs over several repos at once. The repos are the checkout names in `$ARGUMENTS` when given (e.g. `/brain:patrol responsibid-php`), otherwise these five: `responsibid-server`, `responsibid-client-v2`, `responsibid-php`, `subscriptions`, `terraform-infra`. Each lives at `~/projects/<name>`; that folder is the PR's **repo dir** for every later step. Accept an `$ARGUMENTS` name only when it is letters, digits, `.`, `_` and `-` (no `/`, no spaces) and `~/projects/<name>/.git` exists; report any other name in one line and leave it out of the run.
+Patrol runs over several repos at once. The repos are the checkout names in `$ARGUMENTS` when given (e.g. `/brain:patrol responsibid-php`), otherwise these six: `responsibid-server`, `responsibid-client-v2`, `responsibid-php`, `subscriptions`, `terraform-infra`, `crewcal`. Each lives at `~/projects/<name>`; that folder is the PR's **repo dir** for every later step. Accept an `$ARGUMENTS` name only when it is letters, digits, `.`, `_` and `-` (no `/`, no spaces) and `~/projects/<name>/.git` exists; report any other name in one line and leave it out of the run.
 
 Run the prep script once per repo, all at the same time, each from its repo dir. List the repos as literal words in the `for` line (zsh does not split a variable):
 
 ```bash
-for r in responsibid-server responsibid-client-v2 responsibid-php subscriptions terraform-infra; do
+for r in responsibid-server responsibid-client-v2 responsibid-php subscriptions terraform-infra crewcal; do
   rm -f <scratchpad>/patrol-prep-$r.json <scratchpad>/patrol-prep-$r.err
   (cd ~/projects/$r 2> <scratchpad>/patrol-prep-$r.err && python3 -I /home/xromp/.claude/plugins/cache/rb-plugins/brain/0.7.0/scripts/patrol_prep.py > <scratchpad>/patrol-prep-$r.json 2> <scratchpad>/patrol-prep-$r.err) &
 done; wait
@@ -172,7 +172,7 @@ The rules above on length, tone, hedging and not mentioning automation apply to 
 
 Ask about each PR with a single-select `AskUserQuestion`, starting the moment its review is ready. Wait for my answer before moving on to the next PR. Put a progress note in the question, e.g. `(2 of 5 · 2 reviews still running)`.
 
-- **header**: a short repo name and the number, at most 12 characters, e.g. `server#2975`, `client#812`, `php#3301`, `subs#90`, `infra#41`
+- **header**: a short repo name and the number, at most 12 characters, e.g. `server#2975`, `client#812`, `php#3301`, `subs#90`, `infra#41`, `crewcal#57`
 - **question**: three lines.
   - `<repo dir name>#<number>: <one-line summary of what it does>`
   - `Overview: <two or three sentences: what changed, the risk level, and how many concerns there are>`. The risk level is the entry's `risk.level`, followed by `(raised by <raised_by>)` when that list is not empty.
@@ -278,7 +278,7 @@ Check if `/home/xromp/obsidian/responsibid-brain/Reviews/{filename}` already exi
 
 ### 7d. Determine repo and services
 
-Map the repo to known service names: `responsibid-server`, `responsibid-client-v2`, `responsibid-php`, `terraform-infra`, `subscriptions`.
+Map the repo to known service names: `responsibid-server`, `responsibid-client-v2`, `responsibid-php`, `terraform-infra`, `subscriptions`, `crewcal`.
 
 Take the affected services from the PR's `services` field in the prep JSON. The script maps paths with this table; keep the two in sync:
 - `apps/server/` → `server-graphql`
