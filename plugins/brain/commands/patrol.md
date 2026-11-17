@@ -23,7 +23,7 @@ Run the prep script once per repo, all at the same time, each from its repo dir.
 ```bash
 for r in responsibid-server responsibid-client-v2 responsibid-php subscriptions terraform-infra crewcal; do
   rm -f <scratchpad>/patrol-prep-$r.json <scratchpad>/patrol-prep-$r.err
-  (cd ~/projects/$r 2> <scratchpad>/patrol-prep-$r.err && python3 -I /home/xromp/.claude/plugins/cache/rb-plugins/brain/0.7.0/scripts/patrol_prep.py > <scratchpad>/patrol-prep-$r.json 2> <scratchpad>/patrol-prep-$r.err) &
+  (cd ~/projects/$r 2> <scratchpad>/patrol-prep-$r.err && python3 -I /home/xromp/.claude/plugins/cache/rb-plugins/brain/0.8.0/scripts/patrol_prep.py > <scratchpad>/patrol-prep-$r.json 2> <scratchpad>/patrol-prep-$r.err) &
 done; wait
 ```
 
@@ -219,12 +219,12 @@ After the last PR, show a summary table with one row per PR: `<repo dir name>#<n
 Run every command in this step from the PR's repo dir (`cd <repo dir> && ...`): `gh` resolves `{owner}/{repo}` and `git` resolves `refs/patrol/<number>` from the current folder, so a command run elsewhere acts on the wrong repo. For each PR, first run the gate, which reads the PR fresh:
 
 ```bash
-python3 -I /home/xromp/.claude/plugins/cache/rb-plugins/brain/0.7.0/scripts/patrol_prep.py --gate <number> "$(git rev-parse refs/patrol/<number>)"
+python3 -I /home/xromp/.claude/plugins/cache/rb-plugins/brain/0.8.0/scripts/patrol_prep.py --gate <number> "$(git rev-parse refs/patrol/<number>)"
 ```
 
 - If the gate exits non-zero or prints no JSON, or `state` is `UNKNOWN` (`hold` says why), post nothing and approve nothing for that PR, and list it as "gate failed" with the reason and its drafts, so I can submit it by hand.
 - If `state` is merged or closed, post nothing, and list it in the result as "merged before submit" along with any blocking drafts it lost, so I can raise them as a follow-up.
-- Otherwise post its comments. Then, when the decision was to approve, approve only if `approve` is true. If it is false, do not approve: list the PR as "approval held" with each `hold` reason. A moved head means commits nobody reviewed; the next patrol picks the PR up as a re-review (prep compares my last review's commit with the head). Failing or running checks are not retried by a later patrol when the head stays put, so for those print the command to approve once CI is green, gated again: `cd <repo dir> && python3 -I /home/xromp/.claude/plugins/cache/rb-plugins/brain/0.7.0/scripts/patrol_prep.py --gate <number> <reviewed sha> | jq -e .approve && gh pr review <number> --approve`. Never approve past a hold, even if I chose Approve in the wizard.
+- Otherwise post its comments. Then, when the decision was to approve, approve only if `approve` is true. If it is false, do not approve: list the PR as "approval held" with each `hold` reason. A moved head means commits nobody reviewed; the next patrol picks the PR up as a re-review (prep compares my last review's commit with the head). Failing or running checks are not retried by a later patrol when the head stays put, so for those print the command to approve once CI is green, gated again: `cd <repo dir> && python3 -I /home/xromp/.claude/plugins/cache/rb-plugins/brain/0.8.0/scripts/patrol_prep.py --gate <number> <reviewed sha> | jq -e .approve && gh pr review <number> --approve`. Never approve past a hold, even if I chose Approve in the wizard.
 
 Build each request with `jq` as shown below and pipe it straight in, one command per PR. Don't build arguments in a shell variable for a loop to expand: the shell is zsh, which doesn't split `$var` into words, so the command breaks silently.
 
@@ -250,6 +250,14 @@ Conversation comments:
 gh pr comment <number> --body-file -
 ```
 
+The review response's URL points at the whole review, not at each comment, and 7f matches concerns by each comment's own URL. So after posting the `COMMENT` review, read its comments with the `id` the response returned and record each `html_url` (a `#discussion_r…` link) against the concern with the same `path` and `line`:
+
+```bash
+gh api repos/{owner}/{repo}/pulls/<number>/reviews/<review id>/comments --jq '.[] | {path, line: (.line // .original_line), html_url}'
+```
+
+`gh pr comment` prints the conversation comment's URL; record that one as is.
+
 Never put comments in an `APPROVE` or `REQUEST_CHANGES` review. For approve + light comments, post the `COMMENT` review first, then run the silent approval separately.
 
 ### Global Rules
@@ -274,7 +282,7 @@ Example: PR #342 "fix invoice total calculation" → `342-fix-invoice-total-calc
 
 ### 7c. Check if already captured
 
-Check if `/home/xromp/obsidian/responsibid-brain/Reviews/{filename}` already exists with the same `repo:`. If it does and this is a re-review after new commits (Step 3), append a `## Re-review {YYYY-MM-DD}` section with which earlier concerns were addressed and any new ones, and update `status`. Leave `risk`, `risk_jev`, `risk_score`, `risk_raised_by`, `blocking` and `nits` as the first review set them: they record how well the pre-review risk (Jev's score and each minimum rule) predicted what the review found, so later runs can check whether the score and each rule are worth trusting. Otherwise skip vault capture for this PR.
+Check if `/home/xromp/obsidian/responsibid-brain/Reviews/{filename}` already exists with the same `repo:`. If it does and this is a re-review after new commits (Step 3), append a `## Re-review {YYYY-MM-DD}` section with which earlier concerns were addressed and any new ones, and update `status`. Also set each earlier posted concern's `outcome` in the Review section from what the review agent found at the head (5b checks every earlier concern there) and the comment's thread: `fixed` (changed at the head; tick its checkbox), `disputed` (the author pushed back and I let it go), `open` (still there, no reply yet; 7f keeps checking it), or `moot` (the code it was on is gone for another reason). `unaddressed` is only for a PR that merged or closed with the point untouched, which 7f decides. An ignored concern keeps `outcome:: open`: it was never posted. Leave `risk`, `risk_jev`, `risk_score`, `risk_raised_by`, `blocking`, `nits`, `posted` and `ignored` as the first review set them: they record how well the pre-review risk (Jev's score and each minimum rule) predicted what the review found, so later runs can check whether the score and each rule are worth trusting. Otherwise skip vault capture for this PR.
 
 ### 7d. Determine repo and services
 
@@ -314,6 +322,8 @@ risk_score: {jev.risk.score, or null}
 risk_raised_by: {risk.raised_by as a YAML list, or []}
 blocking: {number of Blocking concerns the review found, posted or not}
 nits: {number of Nit concerns the review found, posted or not}
+posted: {number of concerns posted, edited or not}
+ignored: {number of concerns I ignored in the wizard}
 ---
 
 ## Summary
@@ -328,8 +338,10 @@ Linked issue: {#number and title, or "none"}
 
 ## Review
 
-- [ ] {Blocking | Nit}: {Each concern as a checkbox — specific issue with file path and line number if possible; for Blocking, the failure scenario}
-- [ ] {Next concern}
+- [ ] {Blocking | Nit}: {the concern, with `path:line`; for Blocking, the failure scenario} [rule:: {what raised it: a `REVIEW.md` rule, a lesson's first words, or the 5c/5d criterion}] [source:: {patrol, or the reviewer or bot whose open thread it came from}] [call:: {posted | edited | ignored | not posted}] [url:: {the posted comment's URL, or none}] [outcome:: open]
+- [ ] {Next concern, same fields}
+
+`call` is what happened to the draft, decided after 6e: `posted` (posted as drafted), `edited` (posted after I changed it), `ignored` (I chose Ignore in 6c), or `not posted` (I chose Post or Approve + light comments but nothing went up: Cancel, gate failed, merged before Submit, or Approve chosen in 6b with drafts dropped, or "skip"). `posted:` in the frontmatter counts `posted` and `edited`; `ignored:` counts `ignored`. `outcome` starts as `open` and is set on a re-review (7c) or by 7f. Together they tell a good catch from a nit later: a posted concern that ends `fixed` was a catch (more so when Blocking); one I `ignored`, or that ends `disputed` or `dropped`, was noise; `unaddressed` is neither until I look.
 
 If no concerns: replace the checkboxes with "No issues found — approved.", or "No issues found — approval held: <hold reasons>." when the gate held it.
 
@@ -346,7 +358,26 @@ For posted comments, put the text as posted and its URL in this section. List co
 
 Use `status: approved` when the PR was approved on Submit, with or without light comments. A held approval is `status: needs-review`, with the hold reasons under Follow-ups. Otherwise use `status: needs-review`: these notes have unchecked boxes in the Review section for you to work through in Obsidian.
 
-### 7f. Summary
+### 7f. Settle open outcomes
+
+A re-review only happens while I have not approved, so posted Nits on a PR I approved, and anything on a PR that merged before the next run, would never get an outcome. Before the summary, for each repo in this run, find its review notes (`repo:` matches) with a concern line that has `call:: posted` or `call:: edited`, a `url::` holding `#discussion_r` (an inline comment; conversation comments have no thread state, so they stay `open` and are not queried), and no `settled::` field. For each such PR, from its repo dir:
+
+```bash
+cd <repo dir> && python3 -I /home/xromp/.claude/plugins/cache/rb-plugins/brain/0.8.0/scripts/patrol_prep.py --outcomes <number>
+```
+
+- If it exits non-zero, prints no JSON or returns `error`, change nothing for that PR and list it in the summary with the error.
+- Match each concern to a `comments` entry by its URL. Leave a concern with no match as it is (if `threads_truncated` is true, say so in the summary).
+- Write the entry's `outcome` into the concern line, with these readings:
+  - `fixed`: the line changed under the comment, or someone other than me resolved the thread. Tick the checkbox. A rebase that rewrites the hunk reads the same way: a known false positive.
+  - `replied`: the author answered and the line did not change. Read `author_last_reply` and write `fixed` when it says the point was handled (changed elsewhere, reworded, will do in this PR) or `disputed` when it pushes back (intended, out of scope, won't do).
+  - `dropped`: I resolved my own thread, letting the point go.
+  - `unaddressed`: the PR merged or closed and nothing happened.
+  - `open`: nothing yet; leave it.
+- When `state` is `MERGED` or `CLOSED`, add `[settled:: {YYYY-MM-DD}]` to every concern line of that PR, so later runs stop checking it. While the PR is open, a written outcome can still change on the next run.
+- In the summary, list each outcome this step wrote, one line each (`<repo>#<number> <path:line>: <outcome>` plus, for one read from a reply, its first words), so I can correct a misread. A fix made somewhere the thread cannot see can still read `unaddressed`; I correct those by hand.
+
+### 7g. Summary
 
 End with a brief summary of the run:
 
@@ -362,4 +393,5 @@ End with a brief summary of the run:
 - **Left or skipped in the wizard**: L
 - **Skipped** (already reviewed): N
 - **Vault notes written**: M (in Reviews/)
+- **Outcomes written** (7f): S (fixed / disputed / dropped / unaddressed), listed one per line
 ```
