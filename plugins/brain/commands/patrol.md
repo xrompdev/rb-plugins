@@ -19,7 +19,7 @@ Review open (non-draft) PRs, walk me through them one at a time in a question wi
 From the repo root:
 
 ```bash
-python3 -I /home/xromp/.claude/plugins/cache/rb-plugins/brain/0.5.0/scripts/patrol_prep.py > <scratchpad>/patrol-prep.json
+python3 -I /home/xromp/.claude/plugins/cache/rb-plugins/brain/0.6.0/scripts/patrol_prep.py > <scratchpad>/patrol-prep.json
 ```
 
 Replace `<scratchpad>` with your scratchpad directory, then read the file from there. The script applies these rules in code:
@@ -34,10 +34,10 @@ The Jev pre-pass then adds a `jev` block to each PR:
 
 | Field | Meaning | How to use it |
 |---|---|---|
-| `risk` | Score from Trivial to High | Depth: a Trivial or Low PR gets a quick read; High gets every criterion checked closely |
+| `risk` | Jev's own score from Trivial to High | An input only. Set depth from the entry's top-level `risk` (below), which can be higher |
 | `lessons_to_apply` | `LESSONS.md` lessons whose trigger Jev judged likely to match (p ≥ 0.3) | Apply these lessons. Skip the others unless the diff clearly matches one Jev missed |
 | `adrs_to_open` | ADRs whose area Jev judged the diff touches | Open these ADRs, and only these, unless the diff clearly touches another one |
-| `conditional` | p for Replica reads (`read_after_write`), Money arithmetic (`money`) and Event and workflow safety | Apply the 5d criterion when p ≥ 0.3 |
+| `conditional` | p for Replica reads (`read_after_write`), Money arithmetic (`money`), Event and workflow safety (`event_or_workflow`), Tenant scoping and authorization (`tenant_or_auth`), Public API contract (`public_contract`) and a destructive migration (`destructive_migration`, which the 5c DB schema row checks closely) | Apply the 5d criterion when p ≥ 0.3. For `tenant_or_auth` ≥ 0.3, check every new or changed query, resolver and guard in the diff against the 5c Tenant scoping row, not a sample. These say *where* the risk is; `risk` says how much |
 | `requirements` | Each linked-issue requirement, `covered` / `verify` / `not covered` | Check `verify` items in the code. Confirm a `not covered` item in the code before raising it. If the PR body says it is only *part of* the issue, items it doesn't claim are not concerns |
 | `earlier_comments` | On a re-review, whether each of my comments looks addressed | Spot-check `covered` items. Check `verify` and `not covered` items in the code |
 
@@ -45,7 +45,9 @@ Code facts decide the rest: `touches_connect`, `touches_db_schema`, `context_md`
 
 Each entry also carries:
 
+- `risk`: the level that sets review depth. It is the higher of Jev's level and the rule-based minimums in the script's `RISK_FLOORS` (money, tenant scoping or auth, a destructive migration and event or workflow history make a PR at least High; a public contract, Connect, any schema or migration file and `environment.ts` make it at least Medium). Path rules always count; Jev-question rules count only when Jev is confident (p ≥ 0.8). `raised_by` names the rules that decided the final level when it is above Jev's level, or every rule at the floor when Jev gave no level, and `floor_rules` lists every rule that matched. Depth: a Trivial or Low PR gets a quick read; High gets every criterion checked closely. Without Jev the level reads `at least <level>` or `unknown`, and the PR gets the full checklist anyway.
 - `other_reviewers`: `changes_requested_by` (other reviewers whose latest review still requests changes), `approved_by`, and `unresolved_threads` other people started (humans and bots like Qodo). The review agent reads each open block and thread: a real one it agrees with goes into its concerns (citing the reviewer); one already fixed at the head it notes as fixed.
+- `checks`: the head commit's CI, as `failing` and `pending` check names. A failing check is not a review concern by itself (the author sees it), but a PR with failing or pending checks cannot be approved on Submit (6e).
 - `last_reviewed_commit` on a re-review: the commit my last review was on. The agent reviews `git diff <last_reviewed_commit> refs/patrol/<number>` (the whole PR diff if it is null or no longer an ancestor after a force-push), not commit messages, and reads every review and thread posted since.
 
 If `jev` is null (no key, or `jev_error` is set), review that PR against the full checklist: every lesson in `LESSONS.md` and every ADR title. Tell me in one line before the reviews start, e.g. `Jev unavailable (HTTPError) for #3230, #3229; reviewing with the full checklist.`
@@ -116,7 +118,7 @@ Review ONLY for the criteria in 5c and 5d:
 | Money (`conditional.money`) | **Money arithmetic** | Amounts are in cents (integers), not rounded dollars. Rounding can't turn a small amount into zero or leave a 1-cent mismatch that dead-ends a charge. Every handler that adds to or subtracts from a total is updated (refunds, force-refunds, pending reservations). |
 | Client UI code (`responsibid-client-v2`, plugins) | **UI safety** | New menus and controls are keyboard-operable. Sensitive inputs (passwords, card data) are masked in Datadog session replay. Sanitized HTML keeps link attributes safe (`rel="noopener"`, no `opener`). |
 | CI workflows, nx or lint config | **CI config** | Caches are keyed on every input that changes the result (tool versions, config). Triggers and path filters cover every changed path. A stacked branch is current with its parent. |
-| `apps/connect/` | **Public API contract** | No breaking change to a response shape, param, or status code. OpenAPI snapshot regenerated. Sort and filter params are camelCase. No Prisma or domain logic in Connect. |
+| `apps/connect/`, or a GraphQL schema, webhook or event payload (`conditional.public_contract`) | **Public API contract** | No breaking change to a response shape, param, or status code. OpenAPI snapshot regenerated. Sort and filter params are camelCase. No Prisma or domain logic in Connect. |
 | Event-sourced code or Temporal workflows | **Event and workflow safety** | Existing event shapes are not changed in place (new version or new event instead). Projections handle the new events, and a newly published event has a consumer or the PR says which one comes next. Workflow code stays deterministic — no clock, randomness, or I/O outside activities. |
 
 ## Step 6: Decide each PR with me, one at a time
@@ -166,9 +168,10 @@ Ask about each PR with a single-select `AskUserQuestion`, starting the moment it
 - **header**: `PR #<number>`
 - **question**: three lines.
   - `PR #<number>: <one-line summary of what it does>`
-  - `Overview: <two or three sentences: what changed, the risk level, and how many concerns there are>`
+  - `Overview: <two or three sentences: what changed, the risk level, and how many concerns there are>`. The risk level is the entry's `risk.level`, followed by `(raised by <raised_by>)` when that list is not empty.
   - `Verdict: <Approve | Approve with light comments | Needs review>`
   - When other reviewers have something open, a fourth line: `Open from others: changes requested by <logins>; <n> unresolved threads (<authors>)`.
+  - When `checks` has failing or pending names, a line: `CI: failing <names>; running <names> — approval will be held on Submit unless it's green by then`.
 - **options**, with the option matching the verdict first and labelled `(Recommended)`:
 
 | Option | When to offer it | What happens on Submit |
@@ -206,7 +209,15 @@ After the last PR, show a summary table with one row per PR: number, title, deci
 
 ### 6e. Posting on Submit
 
-For each PR, first check `gh pr view <number> --json state,headRefOid`. If it is merged or closed, post nothing, and list it in the result as "merged before submit" along with any blocking drafts it lost, so I can raise them as a follow-up. Otherwise post its comments, then approve it when that was the decision.
+For each PR, first run the gate, which reads the PR fresh:
+
+```bash
+python3 -I /home/xromp/.claude/plugins/cache/rb-plugins/brain/0.6.0/scripts/patrol_prep.py --gate <number> "$(git rev-parse refs/patrol/<number>)"
+```
+
+- If the gate exits non-zero or prints no JSON, or `state` is `UNKNOWN` (`hold` says why), post nothing and approve nothing for that PR, and list it as "gate failed" with the reason and its drafts, so I can submit it by hand.
+- If `state` is merged or closed, post nothing, and list it in the result as "merged before submit" along with any blocking drafts it lost, so I can raise them as a follow-up.
+- Otherwise post its comments. Then, when the decision was to approve, approve only if `approve` is true. If it is false, do not approve: list the PR as "approval held" with each `hold` reason. A moved head means commits nobody reviewed; the next patrol picks the PR up as a re-review (prep compares my last review's commit with the head). Failing or running checks are not retried by a later patrol when the head stays put, so for those print the command to approve once CI is green, gated again: `python3 -I /home/xromp/.claude/plugins/cache/rb-plugins/brain/0.6.0/scripts/patrol_prep.py --gate <number> <reviewed sha> | jq -e .approve && gh pr review <number> --approve`. Never approve past a hold, even if I chose Approve in the wizard.
 
 Build each request with `jq` as shown below and pipe it straight in, one command per PR. Don't build arguments in a shell variable for a loop to expand: the shell is zsh, which doesn't split `$var` into words, so the command breaks silently.
 
@@ -256,7 +267,7 @@ Example: PR #342 "fix invoice total calculation" → `342-fix-invoice-total-calc
 
 ### 7c. Check if already captured
 
-Check if `/home/xromp/obsidian/responsibid-brain/Reviews/{filename}` already exists. If it does and this is a re-review after new commits (Step 3), append a `## Re-review {YYYY-MM-DD}` section with which earlier concerns were addressed and any new ones, and update `status`. Otherwise skip vault capture for this PR.
+Check if `/home/xromp/obsidian/responsibid-brain/Reviews/{filename}` already exists. If it does and this is a re-review after new commits (Step 3), append a `## Re-review {YYYY-MM-DD}` section with which earlier concerns were addressed and any new ones, and update `status`. Leave `risk`, `risk_jev`, `risk_score`, `risk_raised_by`, `blocking` and `nits` as the first review set them: they record how well the pre-review risk (Jev's score and each minimum rule) predicted what the review found, so later runs can check whether the score and each rule are worth trusting. Otherwise skip vault capture for this PR.
 
 ### 7d. Determine repo and services
 
@@ -290,6 +301,12 @@ pr: {PR number}
 repo: {repo-name}
 author: {PR author login}
 status: {approved|needs-review}
+risk: {the entry's risk.level, lowercased: trivial|low|medium|high|at least <level>|unknown}
+risk_jev: {risk.jev_level lowercased, or null}
+risk_score: {jev.risk.score, or null}
+risk_raised_by: {risk.raised_by as a YAML list, or []}
+blocking: {number of Blocking concerns the review found, posted or not}
+nits: {number of Nit concerns the review found, posted or not}
 ---
 
 ## Summary
@@ -307,7 +324,7 @@ Linked issue: {#number and title, or "none"}
 - [ ] {Blocking | Nit}: {Each concern as a checkbox — specific issue with file path and line number if possible; for Blocking, the failure scenario}
 - [ ] {Next concern}
 
-If no concerns: replace the checkboxes with "No issues found — approved."
+If no concerns: replace the checkboxes with "No issues found — approved.", or "No issues found — approval held: <hold reasons>." when the gate held it.
 
 ## Follow-ups
 
@@ -320,7 +337,7 @@ If no concerns: replace the checkboxes with "No issues found — approved."
 
 For posted comments, put the text as posted and its URL in this section. List comments I chose to ignore under `Ignored`. On Cancel, keep the drafts and mark them `not posted`.
 
-Use `status: approved` when the PR was approved on Submit, with or without light comments. Otherwise use `status: needs-review`: these notes have unchecked boxes in the Review section for you to work through in Obsidian.
+Use `status: approved` when the PR was approved on Submit, with or without light comments. A held approval is `status: needs-review`, with the hold reasons under Follow-ups. Otherwise use `status: needs-review`: these notes have unchecked boxes in the Review section for you to work through in Obsidian.
 
 ### 7f. Summary
 
@@ -332,6 +349,7 @@ End with a brief summary of the run:
 - **Reviewed**: X PRs
 - **Approved**: Y (Z with light comments)
 - **Commented, not approved**: C
+- **Approval held** (head moved or CI not green): H
 - **Left or skipped in the wizard**: L
 - **Skipped** (already reviewed): N
 - **Vault notes written**: M (in Reviews/)

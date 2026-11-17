@@ -4,8 +4,11 @@
 Run from the repo root. Prints one JSON document to stdout: which PRs to review and why the
 rest were skipped, and for each PR to review, the checks Jev judged relevant, its coverage
 verdicts on the linked issue's requirements and on earlier review comments, and the facts code
-can decide (services, environment.ts, Connect, CONTEXT.md apps). It also fetches each PR head
-into refs/patrol/<number>. It never approves, comments, or writes outside refs/patrol/*.
+can decide (services, environment.ts, Connect, CONTEXT.md apps, head CI checks). It also fetches
+each PR head into refs/patrol/<number>. It never approves, comments, or writes outside refs/patrol/*.
+
+`--gate <number> <reviewed-sha>` prints whether the PR may be approved now (open, head unchanged,
+no failing or running checks); step 6e runs it before every approval.
 
 Without TYPESAFE_API_KEY, or if a Jev call fails, a PR's `jev` is null and the reviewer runs
 the full checklist.
@@ -65,7 +68,39 @@ CONDITIONAL_QUESTIONS = {
     "payments, refunds, tax)?",
     "event_or_workflow": "Does `pr.diff` change event-sourced code (aggregates, events, projections, projectors) "
     "or Temporal workflow code?",
+    "tenant_or_auth": "Does `pr.diff` add or change a query, mutation, resolver or endpoint whose company scoping, "
+    "guard, role or scope check decides who can read or write the data?",
+    "public_contract": "Does `pr.diff` change a shape other code or customers depend on: a GraphQL schema type or "
+    "field, a Connect response, param or status code, a webhook or domain event payload?",
+    "destructive_migration": "Does `pr.diff` add or change a database migration that drops or renames a table or "
+    "column, changes a column type, adds a NOT NULL column without a default, or edits or deletes an existing "
+    "migration? An additive change (a new table, a nullable column, an index) is not destructive.",
 }
+
+# Rule-based minimums under Jev's risk score: the final level is the highest of Jev's level and every rule that
+# matched, and a lower match never pulls it down. Each rule is (name, minimum RISK_LEVELS index, key), where key is
+# a code fact on the entry (decided by paths, so certain) or a Jev conditional (counts only when Jev is confident).
+# Path facts stay at Medium: `touches_db_schema` matches every migration, additive ones too, so only the
+# destructive_migration question may raise a migration to High.
+RISK_FLOORS = [
+    ("money", 3, "money"),
+    ("tenant scoping or auth", 3, "tenant_or_auth"),
+    ("destructive migration", 3, "destructive_migration"),
+    ("event or workflow history", 3, "event_or_workflow"),
+    ("public contract", 2, "public_contract"),
+    ("Connect API", 2, "touches_connect"),
+    ("schema or migration file", 2, "touches_db_schema"),
+    ("environment.ts", 2, "environment_ts_changed"),
+]
+# A floor is a hard minimum, so it takes a confident yes, not the recall threshold (APPLIES) the 5d checks use.
+FLOOR_P = COVERED
+
+# A check that ended in one of these fails the head; anything not yet completed is pending.
+FAILED_CONCLUSIONS = {"FAILURE", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE"}
+FAILED_STATES = {"FAILURE", "ERROR"}
+# Checks that wait for a review (responsibid-server's review-gate reruns on pull_request_review), so
+# holding approval until they pass would deadlock. ponytail: name list, add a repo's gate here when it gets one.
+REVIEW_DEPENDENT_CHECKS = {"review-gate"}
 
 
 def gh(*args):
@@ -95,7 +130,62 @@ def triage(pr, view):
     last_commit = latest([c.get("committedDate") for c in view["commits"]])
     if last_commit and last_commit > last_comment:
         return "re-review", "new commits since my last comment"
+    # committedDate is when a commit was made, not pushed: a push during the wizard can predate the review
+    # 6e posts at Submit. My review's commit, not its time, says whether I saw the head.
+    reviewed = my_last_reviewed_commit(view)
+    if reviewed and view.get("headRefOid") and reviewed != view["headRefOid"]:
+        return "re-review", "head moved past the commit I last reviewed"
     return "skip", "nothing new since my last comment"
+
+
+def check_status(rollup):
+    """Head commit's CI from `statusCheckRollup`: names of failing and still-running checks.
+    The rollup keeps every run of a re-run check. A check (workflow + name, so two workflows' `test` jobs stay
+    apart) is pending while any run of it has not completed: a queued re-run reports a zero start time, so it
+    would lose a latest-by-time pick to the old run. Otherwise its latest completed run decides."""
+    runs = {}
+    for c in rollup or []:
+        status_context = c.get("__typename") == "StatusContext"
+        name = c.get("context") if status_context else c.get("name")
+        if name in REVIEW_DEPENDENT_CHECKS:
+            continue
+        runs.setdefault((None if status_context else c.get("workflowName"), name), []).append(c)
+    failing, pending = [], []
+    for (_, name), checks in runs.items():
+        if any(c.get("__typename") != "StatusContext" and c.get("status") != "COMPLETED" for c in checks):
+            pending.append(name)
+            continue
+        c = max(checks, key=lambda c: c.get("startedAt") or c.get("createdAt") or "")
+        if c.get("__typename") == "StatusContext":
+            state = c.get("state")
+            if state in FAILED_STATES:
+                failing.append(name)
+            elif state != "SUCCESS":
+                pending.append(name)
+        elif c.get("conclusion") in FAILED_CONCLUSIONS:
+            failing.append(name)
+    return {"failing": sorted(set(failing)), "pending": sorted(set(pending))}
+
+
+def gate(number, reviewed_sha):
+    """Submit-time gate (6e): may I approve this PR now? Reads the PR fresh, not the prep snapshot."""
+    try:
+        view = gh_json("pr", "view", str(number), "--json", "state,headRefOid,statusCheckRollup")
+    except (subprocess.CalledProcessError, json.JSONDecodeError) as error:
+        # Unknown state: 6e posts nothing and approves nothing for this PR.
+        detail = (getattr(error, "stderr", "") or str(error)).strip().splitlines()[-1:] or [type(error).__name__]
+        return {"number": number, "state": "UNKNOWN", "approve": False, "hold": [f"gate failed: {detail[0]}"]}
+    hold = []
+    if view["state"] != "OPEN":
+        hold.append(f"PR is {view['state'].lower()}")
+    if view["headRefOid"] != reviewed_sha:
+        hold.append(f"head moved to {view['headRefOid'][:8]} since the reviewed {reviewed_sha[:8]}")
+    checks = check_status(view["statusCheckRollup"])
+    if checks["failing"]:
+        hold.append("failing checks: " + ", ".join(checks["failing"]))
+    if checks["pending"]:
+        hold.append("checks still running: " + ", ".join(checks["pending"]))
+    return {"number": number, "state": view["state"], "approve": not hold, "hold": hold}
 
 
 def my_earlier_comments(number, view, repo):
@@ -187,6 +277,40 @@ def code_facts(files):
     }
 
 
+def level_name(index):
+    return RISK_LEVELS[index].split(":")[0]
+
+
+def risk_index(score):
+    """Jev's raw score to a RISK_LEVELS index, clamped: round(-0.6) is -1, which would index High."""
+    return max(0, min(round(score), len(RISK_LEVELS) - 1))
+
+
+def final_risk(entry):
+    """The entry's risk: the higher of Jev's level and the RISK_FLOORS minimums, with the rules that matched."""
+    jev = entry.get("jev") or {}
+    conditional = jev.get("conditional") or {}
+    matched = [
+        {"rule": name, "min": level_name(level), "_level": level}
+        for name, level, key in RISK_FLOORS
+        if (entry.get(key) is True if key in entry else (conditional.get(key) or 0) >= FLOOR_P)
+    ]
+    floor = max((m["_level"] for m in matched), default=None)
+    # The index jev_prepass took from the raw score; re-rounding the stored 2-decimal score can drop a level.
+    index = (jev.get("risk") or {}).get("index")
+    jev_level = index if isinstance(index, int) and 0 <= index < len(RISK_LEVELS) else None
+    levels = [level for level in (jev_level, floor) if level is not None]
+    return {
+        # Without Jev, only a floor is known, and it is a minimum: say "at least".
+        "level": (level_name(max(levels)) if jev_level is not None else f"at least {level_name(floor)}")
+        if levels else "unknown",
+        "jev_level": None if jev_level is None else level_name(jev_level),
+        # The rules that decided the final level: at the floor, and above Jev's level (or no Jev at all).
+        "raised_by": [m["rule"] for m in matched if m["_level"] == floor and (jev_level is None or floor > jev_level)],
+        "floor_rules": [{k: v for k, v in m.items() if k != "_level"} for m in matched],
+    }
+
+
 def call_jev(state, questions, long_context):
     headers = {"Authorization": f"Bearer {os.environ['TYPESAFE_API_KEY']}", "Content-Type": "application/json"}
     if long_context:
@@ -251,7 +375,9 @@ def jev_prepass(pr, diff, files, reqs, earlier, lessons, adrs):
     return {
         "diff_truncated_for_jev": truncated,
         "risk": None if risk_score is None else {
-            "score": round(risk_score, 2), "level": RISK_LEVELS[min(round(risk_score), len(RISK_LEVELS) - 1)],
+            "score": round(risk_score, 2),
+            "index": risk_index(risk_score),
+            "level": RISK_LEVELS[risk_index(risk_score)],
         },
         "conditional": {k: p(k) for k in CONDITIONAL_QUESTIONS},
         "lessons_to_apply": [
@@ -272,7 +398,7 @@ def jev_prepass(pr, diff, files, reqs, earlier, lessons, adrs):
 
 def prepare(pr, repo, lessons, adrs):
     number = pr["number"]
-    view = gh_json("pr", "view", str(number), "--json", "reviews,comments,commits,body,closingIssuesReferences")
+    view = gh_json("pr", "view", str(number), "--json", "reviews,comments,commits,body,closingIssuesReferences,statusCheckRollup,headRefOid")
     action, reason = triage(pr, view)
     entry = {"number": number, "title": pr["title"], "url": pr["url"], "author": pr["author"]["login"],
              "action": action, "reason": reason}
@@ -295,6 +421,7 @@ def prepare(pr, repo, lessons, adrs):
         "head_ref": f"refs/patrol/{number}",
         "last_reviewed_commit": my_last_reviewed_commit(view) if action == "re-review" else None,
         "other_reviewers": other_reviewers(number, view, repo),
+        "checks": check_status(view.get("statusCheckRollup")),
         **code_facts(files),
         "jev": None,
     })
@@ -305,10 +432,16 @@ def prepare(pr, repo, lessons, adrs):
             entry["jev"] = jev_prepass(pr_with_body, diff, files, reqs, earlier, lessons, adrs)
         except Exception as error:  # a failed pre-pass means a full review, never a skipped one
             entry["jev_error"] = type(error).__name__
+    entry["risk"] = final_risk(entry)
     return entry
 
 
 def main():
+    if sys.argv[1:2] == ["--gate"]:
+        if len(sys.argv) != 4 or not re.fullmatch(r"[0-9]+", sys.argv[2]) or not re.fullmatch(r"[0-9a-f]{40}", sys.argv[3]):
+            sys.exit("usage: patrol_prep.py --gate <pr-number> <reviewed-commit-sha>")
+        print(json.dumps(gate(int(sys.argv[2]), sys.argv[3])))
+        return 0
     started = time.monotonic()
     repo = gh_json("repo", "view", "--json", "nameWithOwner")["nameWithOwner"]
     prs = gh_json("pr", "list", "--state", "open", "--limit", "1000",

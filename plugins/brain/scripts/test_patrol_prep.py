@@ -1,0 +1,73 @@
+"""Self-check for patrol_prep: python3 -I test_patrol_prep.py"""
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent))
+from patrol_prep import check_status, final_risk, risk_index, triage  # noqa: E402
+
+
+def run(name, status, conclusion, started, workflow="CI"):
+    return {"__typename": "CheckRun", "name": name, "status": status, "conclusion": conclusion,
+            "startedAt": started, "workflowName": workflow}
+
+
+rollup = [
+    run("build", "COMPLETED", "SUCCESS", "T1"),
+    run("lint", "COMPLETED", "FAILURE", "T1"),
+    run("gate", "COMPLETED", "SUCCESS", "T2"),  # re-run green after a failure, listed first: newest run wins, not
+    run("gate", "COMPLETED", "FAILURE", "T1"),  # the last one in the list
+    run("skip", "COMPLETED", "SKIPPED", "T1"),
+    run("e2e", "COMPLETED", "SUCCESS", "T1"),  # old green run plus a queued re-run (zero start time): pending
+    run("e2e", "QUEUED", None, "0001-01-01T00:00:00Z"),
+    run("test", "COMPLETED", "FAILURE", "T1", workflow="A"),  # same name in another workflow does not hide it
+    run("test", "COMPLETED", "SUCCESS", "T2", workflow="B"),
+    run("review-gate", "QUEUED", None, "T1"),  # waits for a review: never holds approval
+    {"__typename": "StatusContext", "context": "qodo", "state": "PENDING", "createdAt": "T1"},
+    {"__typename": "StatusContext", "context": "ci/legacy", "state": "ERROR", "createdAt": "T1"},
+]
+assert check_status(rollup) == {"failing": ["ci/legacy", "lint", "test"], "pending": ["e2e", "qodo"]}, check_status(rollup)
+assert check_status(None) == {"failing": [], "pending": []}
+
+FACTS = {"touches_connect": False, "touches_db_schema": False, "environment_ts_changed": False}
+
+
+def entry(score=None, facts=None, **conditional):
+    # Shaped like jev_prepass's output: the index comes from the raw score, the stored score is rounded.
+    risk = None if score is None else {"score": round(score, 2), "index": risk_index(score)}
+    return {**FACTS, **(facts or {}), "jev": None if score is None else {"risk": risk, "conditional": conditional}}
+
+
+# Jev alone: its level stands, nothing raised it.
+assert final_risk(entry(1.2)) == {"level": "Low", "jev_level": "Low", "raised_by": [], "floor_rules": []}
+# Re-rounding the 2-decimal score would give 2.50 -> 2 (Medium); the raw 2.503 is High.
+assert final_risk(entry(2.503))["level"] == "High"
+# A confident Jev answer on money lifts Low to High; a lower path rule matches but does not raise.
+r = final_risk(entry(1.0, {"touches_connect": True}, money=0.9))
+assert (r["level"], r["raised_by"]) == ("High", ["money"]), r
+assert [m["rule"] for m in r["floor_rules"]] == ["money", "Connect API"], r
+# A floor never pulls the level down.
+assert final_risk(entry(3.0, {"touches_db_schema": True}))["level"] == "High"
+# FLOOR_P is inclusive at 0.8; below it a Jev rule stays a lead, not a minimum.
+assert final_risk(entry(0.0, money=0.8))["level"] == "High"
+assert final_risk(entry(0.0, money=0.79))["level"] == "Trivial"
+# Any migration file is at least Medium; only a destructive one is High.
+assert final_risk(entry(0.0, {"touches_db_schema": True}))["level"] == "Medium"
+assert final_risk(entry(0.0, {"touches_db_schema": True}, destructive_migration=0.95))["level"] == "High"
+# Out-of-range scores clamp: -0.6 rounds to -1, which must be Trivial, not High.
+assert final_risk(entry(-0.6))["level"] == "Trivial"
+assert final_risk(entry(7))["level"] == "High"
+# Without Jev: a path rule gives a minimum only and names it; no rule gives unknown.
+r = final_risk(entry(None, {"environment_ts_changed": True}))
+assert (r["level"], r["raised_by"]) == ("at least Medium", ["environment.ts"]), r
+assert final_risk(entry(None))["level"] == "unknown"
+# Jev present but its risk missing: same as without Jev.
+assert final_risk({**FACTS, "jev": {"risk": None, "conditional": {}}})["level"] == "unknown"
+
+ME_REVIEW = {"author": {"login": "xrompdev"}, "state": "COMMENTED", "submittedAt": "2026-11-18T10:05:00Z",
+             "commit": {"oid": "a" * 40}}
+view = {"reviews": [ME_REVIEW], "comments": [], "commits": [{"committedDate": "2026-11-18T10:00:00Z"}]}
+# Head unchanged since my review: nothing new.
+assert triage({}, {**view, "headRefOid": "a" * 40})[0] == "skip"
+# A commit made before my review but pushed after it: the time check misses it, the commit check catches it.
+assert triage({}, {**view, "headRefOid": "b" * 40}) == ("re-review", "head moved past the commit I last reviewed")
+print("ok")
