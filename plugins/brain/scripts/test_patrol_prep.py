@@ -6,7 +6,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import subprocess  # noqa: E402
 
 import patrol_prep  # noqa: E402
-from patrol_prep import check_status, final_risk, prepare_or_fail, risk_index, triage  # noqa: E402
+from patrol_prep import check_status, final_risk, prepare_or_fail, risk_index, thread_outcome, triage  # noqa: E402
 
 
 def run(name, status, conclusion, started, workflow="CI"):
@@ -111,4 +111,34 @@ assert entries[1]["reason"] == "prep failed: git fetch: fatal: couldn't find rem
 calls.clear()
 patrol_prep.fetch_heads([])
 assert calls == [], "no refspec must not run a plain git fetch"
+
+
+def thread(outdated=False, resolved_by=None, replies=(), total=None):
+    who = [("xrompdev", "first"), *replies]
+    nodes = [{"author": None if w is None else {"login": w}, "body": b} for w, b in who]
+    return {"isOutdated": outdated, "isResolved": resolved_by is not None,
+            "resolvedBy": None if resolved_by is None else {"login": resolved_by},
+            "comments": {"totalCount": total or len(nodes), "nodes": nodes}}
+
+
+def outcome(t, author="dev", state="OPEN"):
+    return thread_outcome(t, author, state)["outcome"]
+
+
+# The line changed under the comment: acted on, even if the author also replied.
+assert outcome(thread(outdated=True, replies=[("dev", "intended")])) == "fixed"
+# Author replied, line unchanged: only the text tells "intended" from "done elsewhere", so it is handed over.
+r = thread_outcome(thread(replies=[("dev", "intended"), ("xrompdev", "reword body?"), ("dev", "Reworded it")]), "dev", "MERGED")
+assert r == {"outcome": "replied", "author_last_reply": "Reworded it"}, r
+# A reply from someone else is not the author's; a deleted author (null) never matches a deleted replier.
+assert outcome(thread(replies=[("qodo", "+1")])) == "open"
+assert outcome(thread(replies=[(None, "ghost")]), author=None) == "open"
+# Resolved: by me means I let it go, by anyone else means accepted.
+assert outcome(thread(resolved_by="xrompdev")) == "dropped"
+assert outcome(thread(resolved_by="dev")) == "fixed"
+# Nothing at all: open while the PR is, unaddressed once it merged or closed.
+assert outcome(thread()) == "open"
+assert outcome(thread(), state="CLOSED") == "unaddressed"
+# More replies than fetched: not judged on part of the thread.
+assert outcome(thread(replies=[("dev", "x")], total=150)) == "open"
 print("ok")

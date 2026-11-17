@@ -49,7 +49,7 @@ gh pr diff {number} --repo {owner/repo}
 gh pr view {number} --repo {owner/repo} --json title,body,author,files,additions,deletions
 ```
 
-6. **Write review notes** using the same format as `/brain:patrol` step 7e.
+6. **Write review notes** using the same format as `/brain:patrol` step 7e. Leave out the fields only patrol's wizard can fill: the `call::`, `url::` and `outcome::` fields on each concern line and the `posted:` and `ignored:` counts. Set `source::` to the reviewer whose comment the concern came from.
 
 7. **Report** how many reviews were synced:
 

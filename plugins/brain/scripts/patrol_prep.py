@@ -188,6 +188,56 @@ def gate(number, reviewed_sha):
     return {"number": number, "state": view["state"], "approve": not hold, "hold": hold}
 
 
+OUTCOMES_QUERY = """query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){
+pullRequest(number:$number){state author{login} reviewThreads(first:100){totalCount nodes{isResolved isOutdated
+resolvedBy{login} comments(first:100){totalCount nodes{author{login} url body}}}}}}}"""
+
+
+def thread_outcome(thread, pr_author, pr_state):
+    """What became of one of my inline comments, from GitHub's thread state.
+    - outdated: the line changed under it, so it was acted on (`fixed`; a rebase that rewrites the hunk reads the
+      same, a known false positive);
+    - the author replied and the line did not change: `replied`, with the author's last words, because only the
+      text tells "intended" from "done elsewhere" (7f reads it and writes `fixed` or `disputed`);
+    - resolved: by me means I let it go (`dropped`), by anyone else means accepted (`fixed`);
+    - nothing: `open` while the PR is, `unaddressed` once it merged or closed.
+    A thread with more replies than fetched stays `open` rather than be judged on part of it."""
+    comments = thread["comments"]
+    if comments["totalCount"] > len(comments["nodes"]):
+        return {"outcome": "open"}
+    if thread["isOutdated"]:
+        return {"outcome": "fixed"}
+    replies = [c for c in comments["nodes"][1:] if pr_author and (c.get("author") or {}).get("login") == pr_author]
+    if replies:
+        return {"outcome": "replied", "author_last_reply": (replies[-1].get("body") or "")[:600]}
+    if thread["isResolved"]:
+        return {"outcome": "dropped" if (thread.get("resolvedBy") or {}).get("login") == ME else "fixed"}
+    return {"outcome": "unaddressed" if pr_state in ("MERGED", "CLOSED") else "open"}
+
+
+def outcomes(repo, number):
+    """`--outcomes` (7f): each of my inline review comments on the PR, by URL, with its outcome. Never raises: a gh
+    failure or a missing PR returns `error`, and 7f leaves that PR's concerns as they are."""
+    owner, name = repo.split("/")
+    try:
+        pr = gh_json("api", "graphql", "-f", f"query={OUTCOMES_QUERY}", "-F", f"owner={owner}", "-F", f"name={name}",
+                     "-F", f"number={number}")["data"]["repository"]["pullRequest"]
+        if pr is None:
+            raise LookupError(f"no PR #{number} in {repo}")
+    except (subprocess.CalledProcessError, json.JSONDecodeError, LookupError, KeyError, TypeError) as error:
+        return {"number": number, "error": failure_reason(error).replace("prep failed: ", ""), "comments": []}
+    threads = pr["reviewThreads"]
+    author, state = (pr.get("author") or {}).get("login"), pr["state"]
+    mine = [t for t in threads["nodes"]
+            if t["comments"]["nodes"] and (t["comments"]["nodes"][0].get("author") or {}).get("login") == ME]
+    return {
+        "number": number, "state": state,
+        # Past 100 threads the list is cut: say so rather than report the rest as missing.
+        "threads_truncated": threads["totalCount"] > len(threads["nodes"]),
+        "comments": [{"url": t["comments"]["nodes"][0]["url"], **thread_outcome(t, author, state)} for t in mine],
+    }
+
+
 def my_earlier_comments(number, view, repo):
     inline = gh_json("api", "--paginate", "--slurp", f"repos/{repo}/pulls/{number}/comments")
     inline = [c for page in inline for c in page]
@@ -485,6 +535,12 @@ def main():
         if len(sys.argv) != 4 or not re.fullmatch(r"[0-9]+", sys.argv[2]) or not re.fullmatch(r"[0-9a-f]{40}", sys.argv[3]):
             sys.exit("usage: patrol_prep.py --gate <pr-number> <reviewed-commit-sha>")
         print(json.dumps(gate(int(sys.argv[2]), sys.argv[3])))
+        return 0
+    if sys.argv[1:2] == ["--outcomes"]:
+        if len(sys.argv) != 3 or not re.fullmatch(r"[0-9]+", sys.argv[2]):
+            sys.exit("usage: patrol_prep.py --outcomes <pr-number>")
+        repo = gh_json("repo", "view", "--json", "nameWithOwner")["nameWithOwner"]
+        print(json.dumps(outcomes(repo, int(sys.argv[2]))))
         return 0
     started = time.monotonic()
     repo = gh_json("repo", "view", "--json", "nameWithOwner")["nameWithOwner"]
