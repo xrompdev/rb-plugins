@@ -3,7 +3,10 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from patrol_prep import check_status, final_risk, risk_index, triage  # noqa: E402
+import subprocess  # noqa: E402
+
+import patrol_prep  # noqa: E402
+from patrol_prep import check_status, final_risk, prepare_or_fail, risk_index, triage  # noqa: E402
 
 
 def run(name, status, conclusion, started, workflow="CI"):
@@ -70,4 +73,42 @@ view = {"reviews": [ME_REVIEW], "comments": [], "commits": [{"committedDate": "2
 assert triage({}, {**view, "headRefOid": "a" * 40})[0] == "skip"
 # A commit made before my review but pushed after it: the time check misses it, the commit check catches it.
 assert triage({}, {**view, "headRefOid": "b" * 40}) == ("re-review", "head moved past the commit I last reviewed")
+
+PR = {"number": 2931, "title": "big", "url": "u", "author": {"login": "dev"}}
+
+
+def gh_fails(*_):
+    raise subprocess.CalledProcessError(
+        1, ["gh", "api", "--paginate", "repos/o/r/pulls/2931/files", "--jq", ".[].filename"], stderr="HTTP 404\n")
+
+
+def odd_response(*_):
+    raise KeyError("reviews")
+
+
+# Any failure in one PR's prep marks only that PR failed, naming the gh call (flags dropped) or the error type.
+patrol_prep.prepare = gh_fails
+assert prepare_or_fail(PR, "o/r", [], [])["reason"] == "prep failed: gh api repos/o/r/pulls/2931/files: HTTP 404"
+patrol_prep.prepare = odd_response
+assert prepare_or_fail(PR, "o/r", [], [])["reason"] == "prep failed: KeyError: 'reviews'"
+
+# One bad refspec fails a batched fetch: fall back to one PR at a time and mark only the PR that still fails.
+calls = []
+
+
+def fake_run(cmd, **_):
+    refs = [a for a in cmd if a.startswith("pull/")]
+    calls.append(refs)
+    if any("pull/2/" in r for r in refs):
+        raise subprocess.CalledProcessError(128, cmd, stderr="fatal: couldn't find remote ref pull/2/head\n")
+
+
+patrol_prep.subprocess.run = fake_run
+entries = [{"number": n, "head_ref": f"refs/patrol/{n}", "action": "review"} for n in (1, 2, 3)]
+patrol_prep.fetch_heads(entries)
+assert [e["action"] for e in entries] == ["review", "failed", "review"], entries
+assert entries[1]["reason"] == "prep failed: git fetch: fatal: couldn't find remote ref pull/2/head", entries[1]
+calls.clear()
+patrol_prep.fetch_heads([])
+assert calls == [], "no refspec must not run a plain git fetch"
 print("ok")
