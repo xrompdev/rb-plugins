@@ -86,6 +86,7 @@ Agents read `CONTEXT-MAP.md`, plus the `context_md` files and `adrs_to_open` fro
 - Before raising a concern, read the whole linked-issue thread and the earlier review threads on the PR. Do not ask to undo something the author changed on purpose, a fix another reviewer asked for, or a decision the product owner has since reversed.
 - On a re-review, check each earlier concern in the code at the head. An author reply saying it is fixed is not evidence.
 - Do not raise commit-message or commit-body wording, and do not ask for "an integration test" without naming the case it must cover. Both get ignored.
+- Do not ask to rename anything (a variable, function, file, field or type), not even as a Nit. This holds over any naming Nit a `REVIEW.md` Code Style section would allow. A name is a concern only when the code behind it is wrong: then raise the behaviour, not the name. The exception is a **contract name**, one that is stored or called by name outside the PR's code, so changing it later breaks running systems: an event type, a projection's name string (the name passed to the projection, not its class name), a Temporal workflow, signal, query or activity name, a RabbitMQ exchange, routing key or queue, a job name, a GraphQL or Connect field or route path, a database column, an environment variable or an aggregate type. A contract name the PR renames, or introduces in a form that breaks a stated rule (the 5d camelCase rule for Connect params, the glossary term for an existing concept), is a concern.
 - When the run ends, the main session deletes every `refs/patrol/*` ref: `git for-each-ref --format='%(refname)' refs/patrol/ | xargs -r -n1 git update-ref -d`.
 
 ### 5c. Criteria for every PR
@@ -112,7 +113,7 @@ Review ONLY for the criteria in 5c and 5d:
 
 | Applies when the diff touches | Criterion | What to check |
 |-------------------------------|-----------|---------------|
-| An app with a `CONTEXT.md` | **Domain language and invariants** | Names and behaviour match the glossary in that `CONTEXT.md`. No new term for an existing concept. No stated invariant broken. |
+| An app with a `CONTEXT.md` | **Domain language and invariants** | Behaviour matches the glossary in that `CONTEXT.md`, and no stated invariant is broken. Naming differences are not raised, except on contract names (5b). |
 | An area governed by an ADR | **ADR compliance** | The change does not contradict the ADR. If it deliberately does, the PR must say so and update or supersede the ADR. |
 | A read after a write, or a read that decides a write (`conditional.read_after_write`) | **Replica reads** | A read that must see current data runs on the writer: inside the same `$transaction` as the write, or as a conditional write / `FOR UPDATE`. That covers check-then-act reads: validation, duplicate checks, status and auth state (a deactivated user, an existing record). Reads outside it can be served by a stale replica. |
 | Money (`conditional.money`) | **Money arithmetic** | Amounts are in cents (integers), not rounded dollars. Rounding can't turn a small amount into zero or leave a 1-cent mismatch that dead-ends a charge. Every handler that adds to or subtracts from a total is updated (refunds, force-refunds, pending reservations). |
