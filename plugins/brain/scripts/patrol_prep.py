@@ -530,6 +530,17 @@ def fetch_heads(entries):
             e.update(action="failed", reason=failure_reason(error))
 
 
+def record_head(entry):
+    """The SHA prep fetched into refs/patrol/<number>: the one head the review agent may read, and the SHA its report
+    is checked against (step 6). `force_pushed` is true when my last reviewed commit is no longer an ancestor, so the
+    re-review covers the whole PR; a stale `origin/<branch>` can still hold the old history then."""
+    entry["head_sha"] = subprocess.run(["git", "rev-parse", entry["head_ref"]],
+                                       capture_output=True, text=True, check=True).stdout.strip()
+    last = entry.get("last_reviewed_commit")
+    entry["force_pushed"] = bool(last) and subprocess.run(
+        ["git", "merge-base", "--is-ancestor", last, entry["head_ref"]], capture_output=True).returncode != 0
+
+
 def main():
     if sys.argv[1:2] == ["--gate"]:
         if len(sys.argv) != 4 or not re.fullmatch(r"[0-9]+", sys.argv[2]) or not re.fullmatch(r"[0-9a-f]{40}", sys.argv[3]):
@@ -564,6 +575,8 @@ def main():
 
     fetch_heads([e for e in entries if e["action"] in ("review", "re-review")])
     to_review = [e for e in entries if e["action"] in ("review", "re-review")]
+    for e in to_review:
+        record_head(e)
 
     print(json.dumps({
         "repo": repo,
