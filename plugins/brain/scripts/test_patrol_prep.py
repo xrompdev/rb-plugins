@@ -9,6 +9,40 @@ import patrol_prep  # noqa: E402
 from patrol_prep import check_status, final_risk, prepare_or_fail, risk_index, thread_outcome, triage  # noqa: E402
 
 
+import os  # noqa: E402
+import tempfile  # noqa: E402
+
+from patrol_prep import record_head  # noqa: E402
+
+
+def git(*args, cwd):
+    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=True).stdout.strip()
+
+
+# record_head: the fetched head's SHA, and force_pushed when my last reviewed commit is no longer an ancestor.
+with tempfile.TemporaryDirectory() as repo:
+    git("init", "-q", cwd=repo)
+    env = ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m"]
+    git(*env, "a", cwd=repo); a = git("rev-parse", "HEAD", cwd=repo)
+    git(*env, "b", cwd=repo); b = git("rev-parse", "HEAD", cwd=repo)
+    git("checkout", "-q", "--orphan", "rebased", cwd=repo)
+    git(*env, "c", cwd=repo); c = git("rev-parse", "HEAD", cwd=repo)
+    git("update-ref", "refs/patrol/1", b, cwd=repo)
+    git("update-ref", "refs/patrol/2", c, cwd=repo)
+    cwd = os.getcwd(); os.chdir(repo)
+    try:
+        e = {"head_ref": "refs/patrol/1", "last_reviewed_commit": a}; record_head(e)
+        assert (e["head_sha"], e["force_pushed"]) == (b, False), e
+        e = {"head_ref": "refs/patrol/2", "last_reviewed_commit": a}; record_head(e)  # rebased: a not in c's history
+        assert (e["head_sha"], e["force_pushed"]) == (c, True), e
+        e = {"head_ref": "refs/patrol/1", "last_reviewed_commit": "f" * 40}; record_head(e)  # commit gone locally
+        assert e["force_pushed"] is True, e
+        e = {"head_ref": "refs/patrol/1", "last_reviewed_commit": None}; record_head(e)  # first review
+        assert e["force_pushed"] is False, e
+    finally:
+        os.chdir(cwd)
+
+
 def run(name, status, conclusion, started, workflow="CI"):
     return {"__typename": "CheckRun", "name": name, "status": status, "conclusion": conclusion,
             "startedAt": started, "workflowName": workflow}

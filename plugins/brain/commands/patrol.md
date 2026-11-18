@@ -23,7 +23,7 @@ Run the prep script once per repo, all at the same time, each from its repo dir.
 ```bash
 for r in responsibid-server responsibid-client-v2 responsibid-php subscriptions terraform-infra crewcal; do
   rm -f <scratchpad>/patrol-prep-$r.json <scratchpad>/patrol-prep-$r.err
-  (cd ~/projects/$r 2> <scratchpad>/patrol-prep-$r.err && python3 -I /home/xromp/.claude/plugins/cache/rb-plugins/brain/0.8.0/scripts/patrol_prep.py > <scratchpad>/patrol-prep-$r.json 2> <scratchpad>/patrol-prep-$r.err) &
+  (cd ~/projects/$r 2> <scratchpad>/patrol-prep-$r.err && python3 -I /home/xromp/.claude/plugins/cache/rb-plugins/brain/0.8.1/scripts/patrol_prep.py > <scratchpad>/patrol-prep-$r.json 2> <scratchpad>/patrol-prep-$r.err) &
 done; wait
 ```
 
@@ -53,7 +53,8 @@ Each entry also carries:
 - `risk`: the level that sets review depth. It is the higher of Jev's level and the rule-based minimums in the script's `RISK_FLOORS` (money, tenant scoping or auth, a destructive migration and event or workflow history make a PR at least High; a public contract, Connect, any schema or migration file and `environment.ts` make it at least Medium). Path rules always count; Jev-question rules count only when Jev is confident (p ≥ 0.8). `raised_by` names the rules that decided the final level when it is above Jev's level, or every rule at the floor when Jev gave no level, and `floor_rules` lists every rule that matched. Depth: a Trivial or Low PR gets a quick read; High gets every criterion checked closely. Without Jev the level reads `at least <level>` or `unknown`, and the PR gets the full checklist anyway.
 - `other_reviewers`: `changes_requested_by` (other reviewers whose latest review still requests changes), `approved_by`, and `unresolved_threads` other people started (humans and bots like Qodo). The review agent reads each open block and thread: a real one it agrees with goes into its concerns (citing the reviewer); one already fixed at the head it notes as fixed.
 - `checks`: the head commit's CI, as `failing` and `pending` check names. A failing check is not a review concern by itself (the author sees it), but a PR with failing or pending checks cannot be approved on Submit (6e).
-- `last_reviewed_commit` on a re-review: the commit my last review was on. The agent reviews `git -C <repo dir> diff <last_reviewed_commit> refs/patrol/<number>` (the whole PR diff if it is null or no longer an ancestor after a force-push), not commit messages, and reads every review and thread posted since.
+- `head_sha`: the commit prep fetched into `refs/patrol/<number>`, the only head the agent may review (5a) and the SHA its report is checked against (step 6).
+- `last_reviewed_commit` on a re-review: the commit my last review was on. The agent reviews `git -C <repo dir> diff <last_reviewed_commit> refs/patrol/<number>`; when `force_pushed` is true (that commit is no longer an ancestor of the head, or is gone), it reviews the whole PR diff instead, not commit messages, and reads every review and thread posted since.
 
 If `jev` is null (no key, or `jev_error` is set), review that PR against the full checklist: every lesson in `LESSONS.md` and every ADR title. Tell me in one line before the reviews start, e.g. `Jev unavailable (HTTPError) for responsibid-server#3230, responsibid-client-v2#3229; reviewing with the full checklist.`
 
@@ -69,8 +70,9 @@ Hand each PR in `to_review` to its own background agent, launching them all in o
 - Its repo dir and GitHub `owner/name`.
 - The repo's `REVIEW.md` from the base branch (`git -C <repo dir> show origin/main:REVIEW.md`), pasted into the prompt for the same reason, when the repo has one. Read it from the base, not the PR head, so a PR that edits `REVIEW.md` is not reviewed against its own rules. When the repo has none, say so in the prompt.
 - The path to this file, with an instruction to read sections 5b–5d for the criteria and rules.
+- Its `head_sha`, and the rule that `refs/patrol/<number>` (that SHA) is the only head of the PR: it must not read `origin/<branch>`, a local branch or any other ref for the PR. Agents can't fetch, so those can still hold history from before a force-push.
 - The rule that it is read-only. It must not approve, comment, write files, check out branches, or fetch. It reads code with `git -C <repo dir> show refs/patrol/<number>:<path>` and `gh pr diff <number> -R <owner/name>` (GitHub refuses a diff over 20,000 lines; then it uses `git -C <repo dir> diff origin/<base branch>...refs/patrol/<number>`, the base branch from `gh pr view <number> -R <owner/name> --json baseRefName`), and opens `CONTEXT.md`, ADR and other files under its repo dir.
-- What to return: verdict (Approve / Approve with light comments / Needs review), a one-line summary, a two-or-three-sentence overview, linked issue, key changes, follow-ups, and whether `environment.ts` changed.
+- What to return: the head SHA it reviewed, verdict (Approve / Approve with light comments / Needs review), a one-line summary, a two-or-three-sentence overview, linked issue, key changes, follow-ups, and whether `environment.ts` changed.
 - Concerns, each already verified in the code and returned as a **ready-to-post draft**: `path:line` inside a diff hunk (or "conversation"), its tier (Blocking or Nit, per 5b) with the rule it falls under, the concrete failure scenario for a Blocking one, and the exact comment text written to the 6a rules. Include the path to this file so the agent can read 6a.
 
 Agents read `CONTEXT-MAP.md`, plus the `context_md` files and `adrs_to_open` from their entry, as they need them. Do not wait for all of them: start Step 6 as soon as the first agent returns.
@@ -131,6 +133,8 @@ Review ONLY for the criteria in 5c and 5d:
 ## Step 6: Decide each PR with me, one at a time
 
 Run the wizard as reviews come in. When a review agent returns, take me through that PR (6b–6c) straight away. Don't wait for the other agents.
+
+Before a returned review enters the wizard, compare the head SHA it says it reviewed with the entry's `head_sha`. This is one string comparison, not a code re-check. On a mismatch (or no SHA), re-launch that agent once with the SHA restated. If the second report still doesn't match, show the PR as "Needs review" with the reason `stale read: reviewed <sha>, head <head_sha>`, with options **Leave** or **Review it myself later**, and never post its drafts.
 
 The agent's drafts are the wizard's content. Present them as returned. **Do not re-check the code, re-run `git`/`gh`, or redraft between questions**: the agent already verified each concern, and every extra step is time I spend waiting. Only touch a draft to fix wording that breaks a 6a rule, without any tool calls.
 
@@ -219,12 +223,12 @@ After the last PR, show a summary table with one row per PR: `<repo dir name>#<n
 Run every command in this step from the PR's repo dir (`cd <repo dir> && ...`): `gh` resolves `{owner}/{repo}` and `git` resolves `refs/patrol/<number>` from the current folder, so a command run elsewhere acts on the wrong repo. For each PR, first run the gate, which reads the PR fresh:
 
 ```bash
-python3 -I /home/xromp/.claude/plugins/cache/rb-plugins/brain/0.8.0/scripts/patrol_prep.py --gate <number> "$(git rev-parse refs/patrol/<number>)"
+python3 -I /home/xromp/.claude/plugins/cache/rb-plugins/brain/0.8.1/scripts/patrol_prep.py --gate <number> "$(git rev-parse refs/patrol/<number>)"
 ```
 
 - If the gate exits non-zero or prints no JSON, or `state` is `UNKNOWN` (`hold` says why), post nothing and approve nothing for that PR, and list it as "gate failed" with the reason and its drafts, so I can submit it by hand.
 - If `state` is merged or closed, post nothing, and list it in the result as "merged before submit" along with any blocking drafts it lost, so I can raise them as a follow-up.
-- Otherwise post its comments. Then, when the decision was to approve, approve only if `approve` is true. If it is false, do not approve: list the PR as "approval held" with each `hold` reason. A moved head means commits nobody reviewed; the next patrol picks the PR up as a re-review (prep compares my last review's commit with the head). Failing or running checks are not retried by a later patrol when the head stays put, so for those print the command to approve once CI is green, gated again: `cd <repo dir> && python3 -I /home/xromp/.claude/plugins/cache/rb-plugins/brain/0.8.0/scripts/patrol_prep.py --gate <number> <reviewed sha> | jq -e .approve && gh pr review <number> --approve`. Never approve past a hold, even if I chose Approve in the wizard.
+- Otherwise post its comments. Then, when the decision was to approve, approve only if `approve` is true. If it is false, do not approve: list the PR as "approval held" with each `hold` reason. A moved head means commits nobody reviewed; the next patrol picks the PR up as a re-review (prep compares my last review's commit with the head). Failing or running checks are not retried by a later patrol when the head stays put, so for those print the command to approve once CI is green, gated again: `cd <repo dir> && python3 -I /home/xromp/.claude/plugins/cache/rb-plugins/brain/0.8.1/scripts/patrol_prep.py --gate <number> <reviewed sha> | jq -e .approve && gh pr review <number> --approve`. Never approve past a hold, even if I chose Approve in the wizard.
 
 Build each request with `jq` as shown below and pipe it straight in, one command per PR. Don't build arguments in a shell variable for a loop to expand: the shell is zsh, which doesn't split `$var` into words, so the command breaks silently.
 
@@ -363,7 +367,7 @@ Use `status: approved` when the PR was approved on Submit, with or without light
 A re-review only happens while I have not approved, so posted Nits on a PR I approved, and anything on a PR that merged before the next run, would never get an outcome. Before the summary, for each repo in this run, find its review notes (`repo:` matches) with a concern line that has `call:: posted` or `call:: edited`, a `url::` holding `#discussion_r` (an inline comment; conversation comments have no thread state, so they stay `open` and are not queried), and no `settled::` field. For each such PR, from its repo dir:
 
 ```bash
-cd <repo dir> && python3 -I /home/xromp/.claude/plugins/cache/rb-plugins/brain/0.8.0/scripts/patrol_prep.py --outcomes <number>
+cd <repo dir> && python3 -I /home/xromp/.claude/plugins/cache/rb-plugins/brain/0.8.1/scripts/patrol_prep.py --outcomes <number>
 ```
 
 - If it exits non-zero, prints no JSON or returns `error`, change nothing for that PR and list it in the summary with the error.
