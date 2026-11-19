@@ -23,7 +23,7 @@ Run the prep script once per repo, all at the same time, each from its repo dir.
 ```bash
 for r in responsibid-server responsibid-php subscriptions terraform-infra crewcal; do
   rm -f <scratchpad>/patrol-prep-$r.json <scratchpad>/patrol-prep-$r.err
-  (cd ~/projects/$r 2> <scratchpad>/patrol-prep-$r.err && python3 -I /home/xromp/.claude/plugins/cache/rb-plugins/brain/0.8.2/scripts/patrol_prep.py > <scratchpad>/patrol-prep-$r.json 2> <scratchpad>/patrol-prep-$r.err) &
+  (cd ~/projects/$r 2> <scratchpad>/patrol-prep-$r.err && python3 -I /home/xromp/.claude/plugins/cache/rb-plugins/brain/0.8.3/scripts/patrol_prep.py > <scratchpad>/patrol-prep-$r.json 2> <scratchpad>/patrol-prep-$r.err) &
 done; wait
 ```
 
@@ -73,7 +73,7 @@ Hand each PR in `to_review` to its own background agent, launching them all in o
 - Its `head_sha`, and the rule that `refs/patrol/<number>` (that SHA) is the only head of the PR: it must not read `origin/<branch>`, a local branch or any other ref for the PR. Agents can't fetch, so those can still hold history from before a force-push.
 - The rule that it is read-only. It must not approve, comment, write files, check out branches, or fetch. It reads code with `git -C <repo dir> show refs/patrol/<number>:<path>` and `gh pr diff <number> -R <owner/name>` (GitHub refuses a diff over 20,000 lines; then it uses `git -C <repo dir> diff origin/<base branch>...refs/patrol/<number>`, the base branch from `gh pr view <number> -R <owner/name> --json baseRefName`), and opens `CONTEXT.md`, ADR and other files under its repo dir.
 - What to return: the head SHA it reviewed, verdict (Approve / Approve with light comments / Needs review), a one-line summary, a two-or-three-sentence overview, linked issue, key changes, follow-ups, and whether `environment.ts` changed.
-- Concerns, each already verified in the code and returned as a **ready-to-post draft**: `path:line` inside a diff hunk (or "conversation"), its tier (Blocking or Nit, per 5b) with the rule it falls under, the concrete failure scenario for a Blocking one, and the exact comment text written to the 6a rules. Include the path to this file so the agent can read 6a.
+- Concerns, each already verified in the code and returned as a **ready-to-post draft**: `path:line` inside a diff hunk (or "conversation"), its tier (Blocking or Nit, per 5b) with the rule it falls under, the concrete failure scenario for a Blocking one, and the exact comment text written to the 6a rules, ending in its agent prompt block (6a, "Agent prompt"). Include the path to this file so the agent can read 6a.
 
 Agents read `CONTEXT-MAP.md`, plus the `context_md` files and `adrs_to_open` from their entry, as they need them. Do not wait for all of them: start Step 6 as soon as the first agent returns.
 
@@ -157,12 +157,12 @@ Write one comment per concern, covering the concerns only — follow-ups stay in
 
 - Inline wherever the concern is about specific code: give each draft the file path and a line on the new side of the diff. The line must fall inside a diff hunk — pick the changed line closest to the problem (for removed code, the line that replaced it).
 - A conversation comment only when the concern has no line: a merge gate, a test that does not exist, an unmet requirement about the PR as a whole.
-- Short. One or two points per PR, a sentence or two each.
+- Short. One or two points per PR, a sentence or two each. Length counts the comment text only; the agent prompt block under it is always posted whole.
 - State the concern directly, with the concern as the first words of the comment.
 - Casual, the way a teammate writes. End each point with a concrete question or ask about the code.
 - I am one reviewer among several. Do not mention my approval, and do not ask the author to ping me or do anything for me.
 - Hedge what was not verified ("from my read").
-- Never mention Claude, AI, or automation.
+- Write the comment text in a teammate's voice, with no mention of Claude, AI or automation. The agent prompt block (below) is the one part of a comment written for an AI agent.
 
 For an approve-with-light-comments PR, use the same inline-first rules: one inline comment per minor point, each opening with `Non-blocking:`. A point about a line outside the diff (a stale docblock, an untouched doc file) goes on the nearest changed line and names the file or spot it means. Only a point with no line at all goes in a conversation comment, also opening with `Non-blocking:`. Do not add an `LGTM.` comment; the approval says that.
 
@@ -171,6 +171,36 @@ Non-blocking: <the concern>. <question or ask>?
 ```
 
 The rules above on length, tone, hedging and not mentioning automation apply to these too.
+
+#### Agent prompt
+
+Every concern comment, blocking and `Non-blocking:` alike, inline and conversation, ends with a collapsed agent prompt (the `environment.ts` infra reminder is a note to the author and carries none): a self-contained task the author pastes into their coding agent to fix the concern. The agent reading it has the repo checked out and nothing else: no PR page, no thread, no review. So the prompt carries every fact it needs, and each field is checkable:
+
+````
+<details>
+<summary>Agent prompt</summary>
+
+```text
+Repo: <owner/name>, PR #<number>, branch <head branch>, reviewed at <short head sha>.
+Location: <path>:<line> (<symbol: function, class or resolver name>).
+Problem: <the concern in one sentence, naming the exact call, query or value>.
+Failure: <input or state> -> <what the user or the data ends up with>.
+Fix: <the target behaviour, stated positively. Name the existing helper, sibling or pattern to follow with its path, e.g. "reuse assertCompanyScope() from libs/auth/src/scope.ts">.
+Done when: <a checkable end state: the test case to add or update, with its file and what it asserts, and the command that must pass, e.g. "npx nx test server -- bid.service.spec.ts">.
+First confirm the problem at Location. If the code there does not show it, change nothing and report why on the PR thread.
+```
+
+</details>
+````
+
+- `Failure:` appears on Blocking concerns. On a Nit, replace it with `Why: <one line on the cost of leaving it>`.
+- `Location:` for a conversation comment names the file or area, or `PR-wide` for a merge gate or an unmet requirement.
+- `Fix:` names the target, not the edit, and leaves the author's agent free to choose the code. When the review found no helper to reuse, say what behaviour the code must have.
+- `Done when:` names a test case by the behaviour it pins down and the repo's command that runs it (from `package.json`, `project.json`, `composer.json`, `phpunit.xml` or `Makefile`). When no test fits (a doc or docblock fix, terraform, a config value), write the check a reader makes instead, e.g. `Done when: the docblock on syncBid() lists the 409 case` or `Done when: terraform plan shows only the tag change`.
+- `branch` is the PR's `headRefName` from `gh pr view <number> -R <owner/name> --json headRefName`. It is a label for the author; the review itself still reads only `refs/patrol/<number>`.
+- When I edit a comment in the wizard (6b or 6c), rewrite its block to match: `Problem`, `Fix` and `Done when` say what the edited comment says.
+- Write each field as plain facts: paths, symbols, values. The teammate voice stays in the comment above the block.
+- Leave a blank line after `<summary>` and before `</details>` so GitHub renders the fenced block inside it.
 
 ### 6b. One question per PR
 
@@ -188,7 +218,7 @@ Ask about each PR with a single-select `AskUserQuestion`, starting the moment it
 | Option | When to offer it | What happens on Submit |
 |---|---|---|
 | **Approve** | only when no draft is blocking. Never `(Recommended)` while another reviewer's changes-requested or an unresolved thread they started is open | Silent approval (6e) |
-| **Approve + light comments** | only when there are drafts | The drafts are posted, then the PR gets a silent approval. Put the drafts, each with its `path:line` or "conversation", in the option's `preview` |
+| **Approve + light comments** | only when there are drafts | The drafts are posted, then the PR gets a silent approval. Put the drafts, each with its `path:line` or "conversation" and its agent prompt block, in the option's `preview` |
 | **Proceed to review** | always, except for a clean PR with no drafts | Go to 6c |
 
 If I answer with free text through "Other", follow it. For example, "skip" leaves the PR untouched, and an edit changes the drafts.
@@ -200,7 +230,7 @@ Go through every draft for the PR, blocking and `Non-blocking:` alike, as single
 - **header**: `#<number> <i>/<n>` (the repo is in 6b's header and the question line, so it stays within 12 characters)
 - **question**: the concern in one line, then its `path:line` or "conversation".
 - **options**:
-  - **Post**: put the exact comment text in the `preview`.
+  - **Post**: put the exact comment text in the `preview`, its agent prompt block included, so I see what the author's agent will get.
   - **Ignore**: the comment is dropped.
 
 A free-text answer is an edit: apply it, and treat the comment as Post.
@@ -223,12 +253,12 @@ After the last PR, show a summary table with one row per PR: `<repo dir name>#<n
 Run every command in this step from the PR's repo dir (`cd <repo dir> && ...`): `gh` resolves `{owner}/{repo}` and `git` resolves `refs/patrol/<number>` from the current folder, so a command run elsewhere acts on the wrong repo. For each PR, first run the gate, which reads the PR fresh:
 
 ```bash
-python3 -I /home/xromp/.claude/plugins/cache/rb-plugins/brain/0.8.2/scripts/patrol_prep.py --gate <number> "$(git rev-parse refs/patrol/<number>)"
+python3 -I /home/xromp/.claude/plugins/cache/rb-plugins/brain/0.8.3/scripts/patrol_prep.py --gate <number> "$(git rev-parse refs/patrol/<number>)"
 ```
 
 - If the gate exits non-zero or prints no JSON, or `state` is `UNKNOWN` (`hold` says why), post nothing and approve nothing for that PR, and list it as "gate failed" with the reason and its drafts, so I can submit it by hand.
 - If `state` is merged or closed, post nothing, and list it in the result as "merged before submit" along with any blocking drafts it lost, so I can raise them as a follow-up.
-- Otherwise post its comments. Then, when the decision was to approve, approve only if `approve` is true. If it is false, do not approve: list the PR as "approval held" with each `hold` reason. A moved head means commits nobody reviewed; the next patrol picks the PR up as a re-review (prep compares my last review's commit with the head). Failing or running checks are not retried by a later patrol when the head stays put, so for those print the command to approve once CI is green, gated again: `cd <repo dir> && python3 -I /home/xromp/.claude/plugins/cache/rb-plugins/brain/0.8.2/scripts/patrol_prep.py --gate <number> <reviewed sha> | jq -e .approve && gh pr review <number> --approve`. Never approve past a hold, even if I chose Approve in the wizard.
+- Otherwise post its comments. Then, when the decision was to approve, approve only if `approve` is true. If it is false, do not approve: list the PR as "approval held" with each `hold` reason. A moved head means commits nobody reviewed; the next patrol picks the PR up as a re-review (prep compares my last review's commit with the head). Failing or running checks are not retried by a later patrol when the head stays put, so for those print the command to approve once CI is green, gated again: `cd <repo dir> && python3 -I /home/xromp/.claude/plugins/cache/rb-plugins/brain/0.8.3/scripts/patrol_prep.py --gate <number> <reviewed sha> | jq -e .approve && gh pr review <number> --approve`. Never approve past a hold, even if I chose Approve in the wizard.
 
 Build each request with `jq` as shown below and pipe it straight in, one command per PR. Don't build arguments in a shell variable for a loop to expand: the shell is zsh, which doesn't split `$var` into words, so the command breaks silently.
 
@@ -238,20 +268,40 @@ Silent approval has NO body, NO comment flag and NO review message — zero text
 gh pr review <number> --approve
 ```
 
-Inline comments go in one review per PR, with event `COMMENT` and no review body. Anchor them to the commit that was reviewed (`refs/patrol/<number>`), not to the current head, so the line numbers match the diff I saw. If the head has moved since then, say so in the result:
+Inline comments go in one review per PR, with event `COMMENT` and no review body. Anchor them to the commit that was reviewed (`refs/patrol/<number>`), not to the current head, so the line numbers match the diff I saw. If the head has moved since then, say so in the result.
+
+Every body reaches the shell through a quoted heredoc (`<<'PATROL_BODY_1'`), one per comment, numbered `b1`, `b2`, …. The quotes on the terminator keep the agent prompt's fences, backticks, `$` and quotes literal. Copy the shape below exactly:
 
 ```bash
-jq -n --arg sha "$(git rev-parse refs/patrol/<number>)" '{
+jq -n --arg sha "$(git rev-parse refs/patrol/<number>)" \
+  --arg b1 "$(cat <<'PATROL_BODY_1'
+<comment 1 text>
+
+<details>
+<summary>Agent prompt</summary>
+...
+</details>
+PATROL_BODY_1
+)" \
+  --arg b2 "$(cat <<'PATROL_BODY_2'
+<comment 2 text, with its block>
+PATROL_BODY_2
+)" '{
   commit_id: $sha,
   event: "COMMENT",
-  comments: [{path: "<file path>", line: <line>, side: "RIGHT", body: "<comment>"}]
+  comments: [
+    {path: "<file path 1>", line: <line 1>, side: "RIGHT", body: $b1},
+    {path: "<file path 2>", line: <line 2>, side: "RIGHT", body: $b2}
+  ]
 }' | gh api -X POST repos/{owner}/{repo}/pulls/<number>/reviews --input -
 ```
 
-Conversation comments:
+Conversation comments, the same way:
 
 ```bash
-gh pr comment <number> --body-file -
+gh pr comment <number> --body-file - <<'PATROL_BODY_1'
+<comment text, with its block>
+PATROL_BODY_1
 ```
 
 The review response's URL points at the whole review, not at each comment, and 7f matches concerns by each comment's own URL. So after posting the `COMMENT` review, read its comments with the `id` the response returned and record each `html_url` (a `#discussion_r…` link) against the concern with the same `path` and `line`:
@@ -367,7 +417,7 @@ Use `status: approved` when the PR was approved on Submit, with or without light
 A re-review only happens while I have not approved, so posted Nits on a PR I approved, and anything on a PR that merged before the next run, would never get an outcome. Before the summary, for each repo in this run, find its review notes (`repo:` matches) with a concern line that has `call:: posted` or `call:: edited`, a `url::` holding `#discussion_r` (an inline comment; conversation comments have no thread state, so they stay `open` and are not queried), and no `settled::` field. For each such PR, from its repo dir:
 
 ```bash
-cd <repo dir> && python3 -I /home/xromp/.claude/plugins/cache/rb-plugins/brain/0.8.2/scripts/patrol_prep.py --outcomes <number>
+cd <repo dir> && python3 -I /home/xromp/.claude/plugins/cache/rb-plugins/brain/0.8.3/scripts/patrol_prep.py --outcomes <number>
 ```
 
 - If it exits non-zero, prints no JSON or returns `error`, change nothing for that PR and list it in the summary with the error.
