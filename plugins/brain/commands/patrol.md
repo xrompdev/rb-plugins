@@ -16,14 +16,14 @@ Review open (non-draft) PRs, walk me through them one at a time in a question wi
 
 ## Steps 1–4: Run the prep script
 
-Patrol runs over several repos at once. The repos are the checkout names in `$ARGUMENTS` when given (e.g. `/brain:patrol responsibid-php`), otherwise these six: `responsibid-server`, `responsibid-client-v2`, `responsibid-php`, `subscriptions`, `terraform-infra`, `crewcal`. Each lives at `~/projects/<name>`; that folder is the PR's **repo dir** for every later step. Accept an `$ARGUMENTS` name only when it is letters, digits, `.`, `_` and `-` (no `/`, no spaces) and `~/projects/<name>/.git` exists; report any other name in one line and leave it out of the run.
+Patrol runs over several repos at once. The repos are the checkout names in `$ARGUMENTS` when given (e.g. `/brain:patrol responsibid-php`), otherwise these five: `responsibid-server`, `responsibid-php`, `subscriptions`, `terraform-infra`, `crewcal`. `responsibid-client-v2` is left out by default; review it only when named in `$ARGUMENTS`. Each lives at `~/projects/<name>`; that folder is the PR's **repo dir** for every later step. Accept an `$ARGUMENTS` name only when it is letters, digits, `.`, `_` and `-` (no `/`, no spaces) and `~/projects/<name>/.git` exists; report any other name in one line and leave it out of the run.
 
 Run the prep script once per repo, all at the same time, each from its repo dir. List the repos as literal words in the `for` line (zsh does not split a variable):
 
 ```bash
-for r in responsibid-server responsibid-client-v2 responsibid-php subscriptions terraform-infra crewcal; do
+for r in responsibid-server responsibid-php subscriptions terraform-infra crewcal; do
   rm -f <scratchpad>/patrol-prep-$r.json <scratchpad>/patrol-prep-$r.err
-  (cd ~/projects/$r 2> <scratchpad>/patrol-prep-$r.err && python3 -I /home/xromp/.claude/plugins/cache/rb-plugins/brain/0.8.1/scripts/patrol_prep.py > <scratchpad>/patrol-prep-$r.json 2> <scratchpad>/patrol-prep-$r.err) &
+  (cd ~/projects/$r 2> <scratchpad>/patrol-prep-$r.err && python3 -I /home/xromp/.claude/plugins/cache/rb-plugins/brain/0.8.2/scripts/patrol_prep.py > <scratchpad>/patrol-prep-$r.json 2> <scratchpad>/patrol-prep-$r.err) &
 done; wait
 ```
 
@@ -223,12 +223,12 @@ After the last PR, show a summary table with one row per PR: `<repo dir name>#<n
 Run every command in this step from the PR's repo dir (`cd <repo dir> && ...`): `gh` resolves `{owner}/{repo}` and `git` resolves `refs/patrol/<number>` from the current folder, so a command run elsewhere acts on the wrong repo. For each PR, first run the gate, which reads the PR fresh:
 
 ```bash
-python3 -I /home/xromp/.claude/plugins/cache/rb-plugins/brain/0.8.1/scripts/patrol_prep.py --gate <number> "$(git rev-parse refs/patrol/<number>)"
+python3 -I /home/xromp/.claude/plugins/cache/rb-plugins/brain/0.8.2/scripts/patrol_prep.py --gate <number> "$(git rev-parse refs/patrol/<number>)"
 ```
 
 - If the gate exits non-zero or prints no JSON, or `state` is `UNKNOWN` (`hold` says why), post nothing and approve nothing for that PR, and list it as "gate failed" with the reason and its drafts, so I can submit it by hand.
 - If `state` is merged or closed, post nothing, and list it in the result as "merged before submit" along with any blocking drafts it lost, so I can raise them as a follow-up.
-- Otherwise post its comments. Then, when the decision was to approve, approve only if `approve` is true. If it is false, do not approve: list the PR as "approval held" with each `hold` reason. A moved head means commits nobody reviewed; the next patrol picks the PR up as a re-review (prep compares my last review's commit with the head). Failing or running checks are not retried by a later patrol when the head stays put, so for those print the command to approve once CI is green, gated again: `cd <repo dir> && python3 -I /home/xromp/.claude/plugins/cache/rb-plugins/brain/0.8.1/scripts/patrol_prep.py --gate <number> <reviewed sha> | jq -e .approve && gh pr review <number> --approve`. Never approve past a hold, even if I chose Approve in the wizard.
+- Otherwise post its comments. Then, when the decision was to approve, approve only if `approve` is true. If it is false, do not approve: list the PR as "approval held" with each `hold` reason. A moved head means commits nobody reviewed; the next patrol picks the PR up as a re-review (prep compares my last review's commit with the head). Failing or running checks are not retried by a later patrol when the head stays put, so for those print the command to approve once CI is green, gated again: `cd <repo dir> && python3 -I /home/xromp/.claude/plugins/cache/rb-plugins/brain/0.8.2/scripts/patrol_prep.py --gate <number> <reviewed sha> | jq -e .approve && gh pr review <number> --approve`. Never approve past a hold, even if I chose Approve in the wizard.
 
 Build each request with `jq` as shown below and pipe it straight in, one command per PR. Don't build arguments in a shell variable for a loop to expand: the shell is zsh, which doesn't split `$var` into words, so the command breaks silently.
 
@@ -367,7 +367,7 @@ Use `status: approved` when the PR was approved on Submit, with or without light
 A re-review only happens while I have not approved, so posted Nits on a PR I approved, and anything on a PR that merged before the next run, would never get an outcome. Before the summary, for each repo in this run, find its review notes (`repo:` matches) with a concern line that has `call:: posted` or `call:: edited`, a `url::` holding `#discussion_r` (an inline comment; conversation comments have no thread state, so they stay `open` and are not queried), and no `settled::` field. For each such PR, from its repo dir:
 
 ```bash
-cd <repo dir> && python3 -I /home/xromp/.claude/plugins/cache/rb-plugins/brain/0.8.1/scripts/patrol_prep.py --outcomes <number>
+cd <repo dir> && python3 -I /home/xromp/.claude/plugins/cache/rb-plugins/brain/0.8.2/scripts/patrol_prep.py --outcomes <number>
 ```
 
 - If it exits non-zero, prints no JSON or returns `error`, change nothing for that PR and list it in the summary with the error.

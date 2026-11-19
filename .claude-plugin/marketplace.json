@@ -55,7 +55,7 @@
       "name": "brain",
       "source": "./plugins/brain",
       "description": "Capture development context (decisions, troubleshooting, gotchas, PR reviews, daily notes) into the ResponsiBid Obsidian vault",
-      "version": "0.8.1"
+      "version": "0.8.2"
     },
     {
       "name": "fix-pr",
