@@ -62,6 +62,12 @@
       "source": "./plugins/fix-pr",
       "description": "Diagnose and fix failing CI checks on a GitHub pull request",
       "version": "0.1.0"
+    },
+    {
+      "name": "teams",
+      "source": "./plugins/teams",
+      "description": "Agent-team clusters for cross-repo features, competing-hypothesis debugging, adversarial pre-push review and agile public-API delivery",
+      "version": "0.1.0"
     }
   ]
 }

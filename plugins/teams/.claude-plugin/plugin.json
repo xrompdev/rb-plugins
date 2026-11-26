@@ -1,0 +1,9 @@
+{
+  "name": "teams",
+  "description": "Agent-team clusters for cross-repo features, competing-hypothesis debugging, adversarial pre-push review and agile public-API delivery",
+  "version": "0.1.0",
+  "author": {
+    "name": "ResponsiBid",
+    "email": "dev@responsibid.com"
+  }
+}

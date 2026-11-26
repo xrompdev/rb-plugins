@@ -36,6 +36,7 @@ To update plugins after new releases:
 | [reviewer](plugins/reviewer) | Anti-pattern detection on current branch changes |
 | [spec-kit](plugins/spec-kit) | Auto-installs GitHub spec-kit for spec-driven development |
 | [unit-tests](plugins/unit-tests) | Update and create unit tests from branch changes |
+| [teams](plugins/teams) | Agent-team clusters: cross-repo feature, debug, review, public API |
 
 ## Plugin details
 
