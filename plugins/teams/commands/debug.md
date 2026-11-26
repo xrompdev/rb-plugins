@@ -14,7 +14,13 @@ Find the root cause of `$ARGUMENTS` with an agent team of competing hypotheses. 
 
 ## 2. Spawn
 
+Before spawning, read the Preflight table in `~/obsidian/responsibid-brain/Areas/ResponsiBid/services/teams/blockers-log.md` and run each check that matches the repos this team touches. Fix or report a failure first, and put the known fixes for a teammate's repo in its brief.
+
 Create the team with three `hypothesis-hunter` teammates, one hypothesis each. Give every hunter the symptom, all three hypotheses, the repo paths, and which environment it may query read-only.
+
+Also spawn `retro-observer`, team `debug`, with the symptom and the three hypotheses.
+
+**Agent performance:** send `retro-observer` each event as it happens (hypothesis assigned, challenged, refuted or confirmed, new hypotheses, evidence a hunter had to ask you for). When the user asks how the agents are doing, ask `retro-observer` for its snapshot and show it unchanged. Apply a tuning change only after the user approves it.
 
 ## 3. Judge
 
@@ -23,4 +29,4 @@ Create the team with three `hypothesis-hunter` teammates, one hypothesis each. G
 
 ## Done
 
-The team is done when one hypothesis is confirmed by evidence that rules out the others. Give the user: the root cause with file:line, the evidence chain, why each other hypothesis was refuted, the proposed fix at the shared code path every caller routes through, and the callers it covers. Then shut the team down; make the fix only after the user agrees.
+The team is done when one hypothesis is confirmed by evidence that rules out the others. Give the user: the root cause with file:line, the evidence chain, why each other hypothesis was refuted, the proposed fix at the shared code path every caller routes through, the callers it covers, and the path of `retro-observer`'s retro. Wait for the retro before you shut the team down; make the fix only after the user agrees.
