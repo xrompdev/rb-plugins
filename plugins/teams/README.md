@@ -2,15 +2,27 @@
 
 Four agent-team clusters for Claude Code. Each command makes your session the team lead and spawns teammates from this plugin's agents.
 
-```
-/plugin install teams --marketplace xrompdev/rb-plugins
-```
+## Setup
 
-Requires agent teams enabled (experimental) in `~/.claude/settings.json`:
+1. Install the plugin:
 
-```json
-{ "env": { "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1" } }
-```
+   ```
+   claude plugin marketplace add xrompdev/rb-plugins   # skip if already added
+   claude plugin marketplace update rb-plugins
+   claude plugin install teams@rb-plugins
+   ```
+
+2. Turn on agent teams. They are experimental and off by default, and a plugin can't switch them on for you. Add this to `~/.claude/settings.json` (merge it into an existing `env` block if you have one):
+
+   ```json
+   { "env": { "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1" } }
+   ```
+
+   Or for one shell only: `export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`.
+
+3. Run `/reload-plugins` in a running session, or start a new one, so the `/teams:*` commands appear. The settings-file flag takes effect without a restart; a shell `export` needs a new session.
+
+With the flag on, Claude may also run ordinary delegated work as named teammates, not only inside these commands. Teams don't start in `claude -p` or Agent SDK sessions.
 
 ## Usage
 
