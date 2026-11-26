@@ -15,7 +15,13 @@ Review the current branch with an agent team before it is pushed. You are the **
 
 ## 2. Spawn
 
+Before spawning, read the Preflight table in `~/obsidian/responsibid-brain/Areas/ResponsiBid/services/teams/blockers-log.md` and run each check that matches the repos this team touches. Fix or report a failure first, and put the known fixes for a teammate's repo in its brief.
+
 Create the team with three `diff-reviewer` teammates, one per lens: **standards**, **spec**, **security**. Give each the base, the changed-file list and the spec text.
+
+Also spawn `retro-observer`, team `review`, with the base and the PR or branch name.
+
+**Agent performance:** send `retro-observer` each event as it happens (finding raised, challenged, dropped with the reason, merged as duplicate, confirmed). When the user asks how the agents are doing, ask `retro-observer` for its snapshot and show it unchanged. Apply a tuning change only after the user approves it.
 
 ## 3. Collect
 
@@ -23,4 +29,4 @@ Each finding needs a concrete failure scenario to survive. Drop findings the oth
 
 ## Done
 
-The team is done when all three reviewers have reported. Give the user the surviving findings ranked by severity, each with file:line, lens and failure scenario, followed by the list of files every reviewer checked. Then shut the team down.
+The team is done when all three reviewers have reported. Give the user the surviving findings ranked by severity, each with file:line, lens and failure scenario, followed by the list of files every reviewer checked and the path of `retro-observer`'s retro. Wait for the retro before you shut the team down.

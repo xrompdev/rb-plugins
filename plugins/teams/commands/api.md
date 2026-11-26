@@ -19,8 +19,10 @@ The Connect app lives in `responsibid-server/apps/connect` (read its `CLAUDE.md`
 
 ## 1. Plan — PMs justify the issue
 
+Before spawning, read the Preflight table in `~/obsidian/responsibid-brain/Areas/ResponsiBid/services/teams/blockers-log.md` and run each check that matches the repos this team touches. Fix or report a failure first, and put the known fixes for a teammate's repo in its brief.
+
 1. Fetch the issue with `gh issue view <n> --comments`. Every phase is tied to this issue; ask the user for one if `$ARGUMENTS` names none.
-2. Spawn three teammates: `pm` with stance **advocate**, `pm` with stance **skeptic**, and `retro-observer`. Give each PM the issue text and the server checkout path.
+2. Spawn three teammates: `pm` with stance **advocate**, `pm` with stance **skeptic**, and `retro-observer` (team `api`). Give each PM the issue text and the server checkout path.
 3. The PMs debate until they agree on a plan or the skeptic vetoes it. Do not settle it for them.
 4. Show the user, from the PMs' final message: the agreed features with their why, what was cut and why, any open veto, and the draft plan. **Stop and wait for the user to confirm or change it.**
 
