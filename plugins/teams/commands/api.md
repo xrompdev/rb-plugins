@@ -33,7 +33,7 @@ When the user confirms, the advocate asks you for QA: spawn `qa-engineer` in **c
 ## 3. Build — engineers
 
 1. Split the plan into tasks, each ending on a completion criterion that maps to one or more acceptance criteria. Give tasks disjoint files so no two engineers edit the same file; tasks that must share a file go to one engineer.
-2. Spawn one `api-engineer` per task, **at most five**. Give each the checkout path, base branch, feature branch, its task, and the criteria comment link.
+2. Spawn one `api-engineer` per task, **at most five**. Give each the checkout path, base branch, feature branch, its task, and the criteria comment link. The brief also names the exact command for every CI test target of each repo the task touches, e2e included (for responsibid-php: in the container, against a throwaway database built like CI, per the `reference_php_tests_in_container` memory), and who runs any target the engineer can't.
 3. Keep everyone moving:
    - check the task list after each teammate message; an engineer with no progress message since its last check-in gets a direct status ask,
    - answer a blocker yourself or route it to the teammate who can; bring it to the user only when the team cannot settle it. Never leave a blocker unanswered,

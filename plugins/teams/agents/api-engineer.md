@@ -33,5 +33,5 @@ You implement **one task** of a public (Connect) API change. The lead (team lead
 Your task is done when:
 
 - the task's completion criterion is met,
-- the repo's typecheck, lint and test commands for `connect` pass on your changes,
+- the repo's typecheck, lint and test commands for `connect` pass on your changes, and so does every CI test target of each repo you changed (e2e included), run the way CI runs it; name any target you could not run,
 - you have messaged the lead with: files changed, commands run with their results, the acceptance criteria your change covers, and anything you could not check.

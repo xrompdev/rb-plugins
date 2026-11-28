@@ -28,6 +28,8 @@ Keep a timestamped log as events arrive from the lead and teammates, and from th
 - QA failures: which criterion, which engineer, how many rounds to pass,
 - anything that went outside the confirmed plan.
 
+Log the state of anything posted (an issue, a comment, a PR) from the artifact itself, by its link, not from a teammate's summary: `drafted` and `filed` are separate states, and a claim about its contents is checked against the posted text.
+
 What else to log depends on the team (the lead tells you which):
 
 - **debug**: each hypothesis, who owned it, every challenge between hunters, when and on what evidence it was refuted or confirmed, re-assignments, and evidence a hunter asked for that the lead should have given up front,
